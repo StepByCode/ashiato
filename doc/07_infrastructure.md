@@ -1,7 +1,8 @@
-Infrastructure Guidelines
+# Infrastructure Guidelines
 
-System Architecture
+## System Architecture
 
+```mermaid
 %%{init: {
   "theme": "base",
   "themeVariables": {
@@ -15,10 +16,6 @@ System Architecture
   "flowchart": { "curve": "basis", "nodeSpacing": 60, "rankSpacing": 80 }
 }}%%
 flowchart LR
-
-    %% =======================
-    %% Edge Layer
-    %% =======================
     subgraph EDGE["Edge Layer"]
         CDN["CDN / Edge Network"]:::edge
         WAF["WAF"]:::edge
@@ -26,9 +23,6 @@ flowchart LR
         KVS["Edge KVS<br/>(署名鍵 / 設定値)"]:::data
     end
 
-    %% =======================
-    %% Application Layer
-    %% =======================
     subgraph APP["Application Layer"]
         subgraph VPC_APP["VPC - Application"]
             LB["Load Balancer / API Gateway"]:::entry
@@ -37,9 +31,6 @@ flowchart LR
         end
     end
 
-    %% =======================
-    %% Identity Layer
-    %% =======================
     subgraph IDENTITY["Identity Layer"]
         subgraph VPC_ID["VPC - Identity"]
             AUTH_SVC["Auth / Middleware"]:::svc
@@ -48,9 +39,6 @@ flowchart LR
         end
     end
 
-    %% =======================
-    %% Data Layer
-    %% =======================
     subgraph DATA["Data Layer"]
         RDB["Primary RDB"]:::db
         VECTOR["Vector DB"]:::db
@@ -58,9 +46,6 @@ flowchart LR
         LOGS["Log Storage"]:::data
     end
 
-    %% =======================
-    %% 接続
-    %% =======================
     CDN --> WAF
     WAF --> EDGE_FUNC
     EDGE_FUNC --> KVS
@@ -75,9 +60,6 @@ flowchart LR
     IDP --> AUTH_DB
     APP_SVC --> LOGS
 
-    %% =======================
-    %% Class Definitions
-    %% =======================
     classDef edge fill:#fff2e6,stroke:#ff7a00,color:#4a2f00;
     classDef svc fill:#eef9f1,stroke:#2a9d8f,color:#073b4c;
     classDef app fill:#e8f1ff,stroke:#3572ef,color:#0a2540;
@@ -85,205 +67,131 @@ flowchart LR
     classDef db fill:#f5faff,stroke:#2b6cb0,color:#0a2a4a;
     classDef data fill:#fff0fb,stroke:#b1008a,color:#4a0040;
     classDef cache fill:#f7faff,stroke:#4a90e2,color:#093a7a;
+```
 
-System Components
+## System Components
 
-1️⃣ Edge Layer
+### 1. Edge Layer
 
-CDN / Edge Network
+#### CDN / Edge Network
 
-静的アセット配信
+- 静的アセット配信
+- TLS終端
+- キャッシュ
+- 地理的最適化
 
-TLS終端
+#### Edge Functions
 
-キャッシュ
+役割:
+- JWT検証（可能ならEdgeで）
+- ヘッダー注入
+- リライト
+- 早期Reject（Unauthorized）
 
-地理的最適化
+設計意図:
+- 全リクエストにかかる処理はEdgeへ集約
+- オリジン負荷軽減
+- レイテンシ最小化
 
-Edge Functions
+### 2. Application Layer
 
-役割：
+#### Application Service
 
-JWT検証（可能ならEdgeで）
+- Container（ECS / Kubernetes）
+- Serverless（Cloud Run / Lambda）
+- またはVM
 
-ヘッダー注入
+責務:
+- ビジネスロジック
+- API処理
+- 権限チェック（最終判定）
 
-リライト
+#### Cache
 
-早期Reject（Unauthorized）
+用途:
+- セッション
+- 頻繁参照データ
+- レート制限
 
-設計意図：
+### 3. Identity Layer（分離推奨）
 
-全リクエストにかかる処理はEdgeへ
+- Auth Middleware
+- Identity Provider
 
-オリジン負荷軽減
+設計原則:
 
-レイテンシ最小化
+| 原則 | 理由 |
+| --- | --- |
+| アプリと分離 | 将来のIDP差し替え |
+| 独立スケール | 認証集中時間帯への対応 |
+| DB直接アクセス禁止 | 責任分離 |
 
-2️⃣ Application Layer
+### 4. Data Layer
 
-Application Service
+| コンポーネント | 用途 |
+| --- | --- |
+| RDB | トランザクション |
+| Vector DB | 類似検索 / RAG |
+| Object Storage | ファイル |
+| Log Storage | 監査・分析 |
 
-Container (ECS/Kubernetes)
+## 設計意図と判断理由
 
-Serverless (Cloud Run/Lambda)
+### 認可処理を高速化するために
 
-またはVM
+- EdgeでJWT検証
+- DBアクセス不要
+- KVSに署名鍵保持
+- Stateless認可
 
-責務：
+理由:
+- 認可は全リクエストに発生
+- レイテンシ削減が最重要
 
-ビジネスロジック
+### IdentityとApplicationの分離
 
-API処理
+なぜ分離するか:
+- 外部IDP切替可能
+- アプリロジックと認証ロジック分離
+- セキュリティ境界明確化
 
-権限チェック（最終判定）
+### Containerを使う理由（Lambdaではなく）
 
-Cache
+Lambdaの課題:
+- コールドスタート
+- DB接続枯渇
+- NAT経由問題
 
-用途：
+Containerの利点:
+- コネクションプーリング
+- VPC内完結
+- 長時間接続可能
 
-セッション
+### VectorDBを分離する理由
 
-頻繁参照データ
+- 類似検索は高CPU負荷
+- RDBと負荷特性が違う
+- 将来スケール前提
 
-レート制限
+### Cacheを利用する理由
 
-3️⃣ Identity Layer（分離推奨）
+- トークン検証後のセッション短期保存
+- レート制限
+- 読み取り最適化
 
-Auth Middleware
+## スケーリング戦略
 
-Identity Provider
+### 水平スケール
 
-設計原則：
+| レイヤー | 方法 |
+| --- | --- |
+| Edge | 自動スケール |
+| App | Auto Scaling |
+| DB | Read Replica |
+| Vector | HNSW / Sharding |
 
-原則
+### 局所アクセス対策
 
-理由
-
-アプリと分離     
-
-将来のIDP差し替え 
-
-独立スケール     
-
-認証集中時間帯対応  
-
-DB直接アクセス禁止 
-
-責任分離       
-
-4️⃣ Data Layer
-
-コンポーネント
-
-用途
-
-RDB            
-
-トランザクション   
-
-Vector DB      
-
-類似検索 / RAG 
-
-Object Storage 
-
-ファイル       
-
-Log Storage    
-
-監査・分析      
-
-設計意図
-
-認可処理を高速化するために
-
-EdgeでJWT検証
-
-DBアクセス不要
-
-KVSに署名鍵保持
-
-Stateless認可
-
-理由：
-
-認可は全リクエストに発生
-
-レイテンシ削減が最重要
-
-IdentityとApplicationの分離
-
-なぜ分離するか？
-
-外部IDP切替可能
-
-アプリロジックと認証ロジック分離
-
-セキュリティ境界明確化
-
-Containerを使う理由（Lambdaではなく）
-
-Lambdaの課題
-
-コールドスタート
-
-DB接続枯渇
-
-NAT経由問題
-
-Containerの利点
-
-コネクションプーリング
-
-VPC内完結
-
-長時間接続可能
-
-VectorDBを分離する理由
-
-類似検索は高CPU負荷
-
-RDBと負荷特性が違う
-
-将来スケール前提
-
-Cacheを利用する理由
-
-トークン検証後のセッション短期保存
-
-レート制限
-
-読み取り最適化
-
-スケーリング戦略
-
-水平スケール
-
-レイヤー
-
-方法
-
-Edge   
-
-自動スケール          
-
-App    
-
-Auto Scaling    
-
-DB     
-
-Read Replica    
-
-Vector 
-
-HNSW / Sharding 
-
-局所アクセス対策
-
-事前Warm-up
-
-Scheduled Scale
-
-Connection Pool管理
+- 事前Warm-up
+- Scheduled Scale
+- Connection Pool管理

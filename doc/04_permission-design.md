@@ -1,138 +1,72 @@
-🔐 権限設計
+# 🔐 権限設計
 
-0️⃣ 設計前提
+## 0. 設計前提
 
-項目
+| 項目 | 内容 |
+| --- | --- |
+| 権限モデル | RBAC |
+| マルチテナント | あり |
+| 認証方式 | JWT |
+| スコープ単位 | Organization |
+| MVP方針 | P0は最小ロールのみ |
 
-内容
+## 1. 用語定義
 
-権限モデル   
+| 用語 | 意味 |
+| --- | --- |
+| Subject | 操作主体（ユーザー / サービスアカウント / システム） |
+| Resource | 操作対象となるデータやエンティティ |
+| Action | 実行される操作（create / read / update / delete など） |
+| Role | 権限を束ねた論理グループ |
+| Policy | 条件付きで許可・拒否を定義するルール |
 
-RBAC
+## 2. 権限レイヤー構造
 
-マルチテナント 
-
-あり
-
-認証方式    
-
-JWT
-
-スコープ単位  
-
-Organization
-
-MVP方針   
-
-P0は最小ロールのみ                       
-
-1️⃣ 用語定義
-
-用語
-
-意味
-
-Subject 
-
-操作主体（ユーザー / サービスアカウント / システム） 
-
-Resource 
-
-操作対象となるデータやエンティティ 
-
-Action 
-
-実行される操作（create / read / update / delete など） 
-
-Role 
-
-権限を束ねた論理グループ 
-
-Policy 
-
-条件付きで許可・拒否を定義するルール 
-
-2️⃣ 権限レイヤー構造
-
+```mermaid
 flowchart TD
-  A[Authentication<br/>本人確認（IDトークン/JWT検証）]
-  R[RBAC<br/>Roleに基づく基本権限]
-  C[ABAC<br/>属性条件（所有者/組織/ステータス等）]
-  D{Decision<br/>Allow / Deny}
+  A["Authentication<br/>本人確認（IDトークン/JWT検証）"]
+  R["RBAC<br/>Roleに基づく基本権限"]
+  C["ABAC<br/>属性条件（所有者/組織/ステータス等）"]
+  D{"Decision<br/>Allow / Deny"}
 
   A --> R --> C --> D
+```
 
-3-1. グローバルロール
+## 3. ロール設計
 
-ロール名
+### 3.1 グローバルロール
 
-レベル
+| ロール名 | レベル | 説明 |
+| --- | ---: | --- |
+| SUPER_ADMIN | 100 | 全操作可能（システム管理・ポリシー変更含む） |
+| ADMIN | 80 | 管理操作可能（ユーザー管理・設定変更） |
+| MEMBER | 50 | 一般利用（通常機能の利用） |
+| GUEST | 10 | 閲覧のみ（Read-only） |
 
-説明
+### 3.2 スコープロール（組織単位）
 
-SUPER_ADMIN 
+※ 本レベルは「組織スコープ内」での相対値（Global Roleのレベルとは別軸）
 
-100 
+| ロール名 | レベル | 説明 |
+| --- | ---: | --- |
+| OWNER | 50 | 組織全権（メンバー管理・設定変更含む） |
+| EDITOR | 30 | 編集可（作成/更新/削除。メンバー管理は不可） |
+| VIEWER | 10 | 閲覧のみ（Read-only） |
 
-全操作可能（システム管理・ポリシー変更含む） 
+### 3.3 RBAC判定ロジック（抽象）
 
-ADMIN 
-
-80 
-
-管理操作可能（ユーザー管理・設定変更） 
-
-MEMBER 
-
-50 
-
-一般利用（通常機能の利用） 
-
-GUEST 
-
-10 
-
-閲覧のみ（Read-only） 
-
-3-2. スコープロール（組織単位）
-
-※本レベルは「組織スコープ内」での相対値（Global Roleのレベルとは別軸）
-
-ロール名
-
-レベル
-
-説明
-
-OWNER 
-
-50 
-
-組織全権（メンバー管理・設定変更含む） 
-
-EDITOR 
-
-30 
-
-編集可（作成/更新/削除。メンバー管理は不可） 
-
-VIEWER 
-
-10 
-
-閲覧のみ（Read-only） 
-
-3-3. RBAC判定ロジック（抽象）
-
+```text
 if user.role.level >= required_level:
     allow
 else:
     deny
+```
 
-4️⃣ ABAC設計テンプレ
+## 4. ABAC設計テンプレ
 
-4-1. 条件モデル
+### 4.1 条件モデル
 
+```json
 {
   "subject.role": "EDITOR",
   "subject.tenant_id": "t_123",
@@ -140,219 +74,112 @@ else:
   "resource.tenant_id": "t_123",
   "environment.time": "<= deadline"
 }
+```
 
-4-2. ポリシーテーブル
+### 4.2 ポリシーテーブル
 
-ID
+| ID | 名前 | Action | 条件 | Effect | Priority |
+| --- | --- | --- | --- | --- | ---: |
+| 1 | DraftOnlyEdit | `entity:update` | `status=draft` | allow | 10 |
+| 2 | OwnerOverride | `entity:update` | `role=OWNER` | allow | 5 |
+| 3 | TenantBoundary | - | `tenant_mismatch` | deny | 1 |
 
-名前
+### 4.3 判定順序
 
-Action
+1. 認証確認（Authentication）
+2. テナント境界（Tenant Boundary）※不一致は即deny
+3. RBAC判定（Role Level）
+4. ABAC条件評価（Priority順 / deny優先）
+5. 最終Decision（allow/deny + 監査ログ）
 
-条件
+## 5. ハイブリッド設計パターン
 
-Effect
+| レイヤー | 用途 |
+| --- | --- |
+| RBAC | 大枠制御（ロールレベル） |
+| ABAC | 状態・所有者・時間など動的条件 |
+| Feature Flag | 実験的制御（段階リリース / ABテスト） |
 
-Priority
+## 6. 代表的ルールテンプレ
 
-1 
+### 6.1 所有者のみ編集可
 
-DraftOnlyEdit 
-
-entity:update 
-
-status=draft 
-
-allow 
-
-10 
-
-2 
-
-OwnerOverride 
-
-entity:update 
-
-role=OWNER 
-
-allow 
-
-5 
-
-3 
-
-TenantBoundary 
-
-
-
-tenant_mismatch 
-
-deny 
-
-1 
-
-4-3. 判定順序
-
-認証確認（Authentication）
-
-テナント境界（Tenant Boundary）※不一致は即deny
-
-RBAC判定（Role Level）
-
-ABAC条件評価（Priority順 / deny優先）
-
-最終Decision（allow/deny + 監査ログ）
-
-5️⃣ ハイブリッド設計パターン
-
-レイヤー
-
-用途
-
-RBAC 
-
-大枠制御（ロールレベル） 
-
-ABAC 
-
-状態・所有者・時間など動的条件 
-
-Feature Flag 
-
-実験的制御（段階リリース/ABテスト） 
-
-6️⃣ 代表的ルールテンプレ
-
-6-1. 所有者のみ編集可
-
+```text
 if resource.owner_id == user.id:
     allow
+```
 
-6-2. ステータスロック
+### 6.2 ステータスロック
 
+```text
 if resource.status == "confirmed":
     deny update
+```
 
-6-3. テナント境界
+### 6.3 テナント境界
 
+```text
 if resource.tenant_id != user.tenant_id:
     deny
+```
 
-6-4. 自分のデータのみ閲覧
+### 6.4 自分のデータのみ閲覧
 
+```text
 if resource.user_id == user.id:
     allow
+```
 
-7️⃣ データモデル連携テンプレ
+## 7. データモデル連携テンプレ
 
-ルール
+| ルール | 参照カラム |
+| --- | --- |
+| 所有者制御 | `entity.owner_id` |
+| 状態制御 | `entity.status` |
+| テナント制御 | `entity.tenant_id` |
+| 組織制御 | `group_members` |
 
-参照カラム
+## 8. ログ設計
 
-所有者制御  
+### 8.1 ABAC評価ログ
 
-entity.owner_id  
+| フィールド | 内容 |
+| --- | --- |
+| `user_id` | - |
+| `action` | - |
+| `resource_type` | - |
+| `resource_id` | - |
+| `matched_policy` | - |
+| `result` | allow / deny |
+| `timestamp` | - |
 
-状態制御   
+### 8.2 監査ログ
 
-entity.status    
+| フィールド | 内容 |
+| --- | --- |
+| who | user |
+| what | action |
+| where | resource |
+| result | decision |
+| ip | client_ip |
 
-テナント制御 
+## 9. APIレイヤー統合
 
-entity.tenant_id 
-
-組織制御   
-
-group_members    
-
-8️⃣ ログ設計
-
-8-1. ABAC評価ログ
-
-フィールド
-
-内容
-
-user_id        
-
-           
-
-action         
-
-           
-
-resource_type  
-
-           
-
-resource_id    
-
-           
-
-matched_policy 
-
-           
-
-result         
-
-allow/deny 
-
-timestamp      
-
-           
-
-8-2. 監査ログ
-
-フィールド
-
-内容
-
-who    
-
-user      
-
-what   
-
-action    
-
-where  
-
-resource  
-
-result 
-
-decision  
-
-ip     
-
-client_ip 
-
-9️⃣ APIレイヤー統合
-
+```javascript
 function authorize(user, action, resource) {
   if (!isAuthenticated(user)) throw 401
   if (!tenantMatch(user, resource)) throw 403
   if (!rbacAllow(user, action)) throw 403
   if (!abacAllow(user, action, resource)) throw 403
 }
+```
 
-🔟 フロントエンド制御
+## 10. フロントエンド制御
 
-パターン
+| パターン | 説明 |
+| --- | --- |
+| 非表示 | ボタンを出さない |
+| 無効化 | `disabled` 表示 |
+| 警告 | `warn` 表示 |
 
-説明
-
-非表示  
-
-ボタンを出さない   
-
-無効化  
-
-disabled表示 
-
-警告   
-
-warn表示     
-
-※ フロントはUX制御のみ。最終判定は必ずサーバー側。
-
+※ フロントはUX制御のみ。最終判定は必ずサーバー側で行う。

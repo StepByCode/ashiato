@@ -1,145 +1,145 @@
-# 📁 ディレクトリ構成図
+📁 ディレクトリ構成図
 
-## 0. 設計前提
+0️⃣ 設計前提
 
-| 項目 | 内容 |
-| --- | --- |
-| リポジトリ構成 | Polyrepo |
-| アーキテクチャ | Clean Architecture |
-| デプロイ単位 | マイクロサービス |
-| 言語 | 任意（TypeScript / Go / Python など） |
-| MVP方針 | P0に必要なディレクトリのみ |
+項目
 
-## 1. 全体構成（Monorepo想定）
+内容
 
-```text
+リポジトリ構成
+
+Polyrepo
+
+アーキテクチャ
+
+Clean Architecture
+
+デプロイ単位
+
+3サービス（Frontend / API / Discord Bot）
+
+言語
+
+TypeScript（Frontend） / Go（API・Bot）
+
+MVP方針
+
+P0に必要なディレクトリのみ
+
+1️⃣ 全体構成（Monorepo想定）
+
 root/
-├── apps/              # 実行可能アプリ
-│   ├── web/
-│   ├── api/
-│   └── admin/
-├── packages/          # 共有パッケージ
-│   ├── ui/
-│   ├── domain/
-│   ├── config/
-│   └── utils/
-├── infra/             # IaC / Terraform / Docker
-├── scripts/           # 補助スクリプト
-├── docs/              # 設計書
+├── frontend/          # Webアプリ（Vercel）
+├── api/               # APIサーバー（Coolify）
+├── bot/               # Discord bot（Coolify）
+├── doc/               # 設計書
 └── README.md
-```
 
-## 2. フロントエンド構成テンプレ
+2️⃣ フロントエンド構成テンプレ
 
-```text
-apps/web/
+frontend/
 ├── src/
 │   ├── app/           # ルーティング層
 │   ├── features/      # 機能単位モジュール
 │   ├── components/    # 共通UI
 │   ├── hooks/
-│   ├── lib/           # APIクライアント等
-│   ├── stores/        # 状態管理
+│   ├── lib/           # APIクライアント
+│   ├── stores/        # Zustand
 │   └── types/
 ├── public/
 └── tests/
-```
 
-### Featureベース構成（推奨）
+Featureベース構成（推奨）
 
-```text
 features/
 ├── auth/
 │   ├── components/
 │   ├── api.ts
 │   ├── hooks.ts
 │   └── types.ts
-├── entity/
+├── tasks/
 │   ├── components/
 │   ├── api.ts
 │   ├── hooks.ts
 │   └── types.ts
-```
+├── meeting/
+│   ├── components/
+│   ├── api.ts
+│   ├── hooks.ts
+│   └── types.ts
+└── announcement/
+    ├── components/
+    ├── api.ts
+    ├── hooks.ts
+    └── types.ts
 
-## 3. バックエンド構成テンプレ（Clean Architecture）
+3️⃣ バックエンド構成テンプレ（Clean Architecture）
 
-```text
-apps/api/
+api/
 ├── cmd/                # エントリポイント
 ├── internal/
 │   ├── domain/         # エンティティ・ビジネスルール
 │   ├── usecase/        # アプリケーションロジック
-│   ├── repository/     # DB抽象
-│   ├── handler/        # HTTP層
-│   ├── middleware/
+│   ├── repository/     # sqlc + pgx
+│   ├── handler/        # Echo HTTP層
+│   ├── middleware/     # 認証・認可
 │   └── config/
 ├── migrations/
 └── tests/
-```
 
-## 4. DDDベース構成テンプレ
+4️⃣ DDDベース構成テンプレ
 
-```text
 src/
 ├── modules/
-│   ├── user/
+│   ├── task/
 │   │   ├── domain/
 │   │   ├── application/
 │   │   ├── infrastructure/
 │   │   └── presentation/
-│   ├── organization/
-│   └── core/
-```
+│   ├── approval/
+│   ├── meeting/
+│   └── auth/
 
-## 5. マイクロサービス構成
+5️⃣ マイクロサービス構成
 
-```text
 services/
-├── auth-service/
-├── core-service/
-├── notification-service/
-└── gateway/
-```
+├── frontend-service/
+├── api-service/
+└── discord-bot-service/
 
-## 6. インフラ構成
+6️⃣ インフラ構成
 
-```text
 infra/
-├── terraform/
-│   ├── modules/
-│   └── environments/
-│       ├── dev/
-│       ├── staging/
-│       └── prod/
-├── docker/
-└── ci/
-```
+├── vercel/            # FE設定
+├── coolify/           # API/Bot設定
+└── ci/                # GitHub Actions等
 
-## 7. ドキュメント構成
+※ IaC（Terraform）は現フェーズ非採用。Vercel/Coolifyの設定中心で運用。
 
-```text
-docs/
+7️⃣ ドキュメント構成
+
+doc/
+├── 00designdoc_template.md
 ├── 01_feature-list.md
-├── 02_db-design.md
+├── 02_tech-stack.md
 ├── 03_screen-flow.md
 ├── 04_permission-design.md
-├── 05_api-spec.md
-└── 06_directory.md
-```
+├── 05_erd.md
+├── 06_directory.md
+├── 07_infrastructure.md
+├── 08_logging.md
+└── 09_schedule_and_issues.md
 
-## 8. テスト構成テンプレ
+8️⃣ テスト構成テンプレ
 
-```text
 tests/
 ├── unit/
 ├── integration/
 ├── e2e/
 └── fixtures/
-```
 
-## 9. ベクトルDB / AI機能がある場合
+9️⃣ ベクトルDB / AI機能がある場合
 
-```text
 packages/
 ├── embeddings/
 │   ├── generator.ts
@@ -148,24 +148,24 @@ packages/
 ├── rag/
 │   ├── retriever.ts
 │   └── prompt-builder.ts
-```
 
-## 10. 状態管理分離パターン（FE）
+※ 現行スコープでは非採用（将来検討）。
 
-```text
+🔟 状態管理分離パターン（FE）
+
 stores/
 ├── auth.store.ts
-├── entity.store.ts
+├── tasks.store.ts
+├── meeting.store.ts
 └── ui.store.ts
-```
 
-## 11. API設計分離パターン
+11️⃣ API設計分離パターン
 
-```text
 api/
 ├── client.ts
 ├── endpoints/
 │   ├── auth.ts
-│   ├── entities.ts
-│   └── users.ts
-```
+│   ├── tasks.ts
+│   ├── approvals.ts
+│   ├── meeting.ts
+│   └── announcements.ts

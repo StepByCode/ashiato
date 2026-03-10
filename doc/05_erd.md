@@ -1,60 +1,245 @@
-# 🗄️ DB設計書テンプレート
+05_erd.md
 
-## 0. 設計観点
+🗄️ DB設計書テンプレート
 
-| 項目 | 内容 |
-| --- | --- |
-| 権限モデル | RBAC |
-| ID戦略 | Auto Increment |
-| 論理削除 | 無 |
-| 監査ログ | 必須 |
+0️⃣ 設計観点
 
-## 1. テーブル一覧テンプレート
+項目
 
-### 1.1 最小構成（MVP）
+内容
 
-| ドメイン | テーブル名 | 役割 | Phase |
-| --- | --- | --- | --- |
-| アカウント | users | ユーザー主体 | P0 |
-| コア機能 | tasks | 中核リソース | P0 |
-| コア機能 | approvals | 関係テーブル | P0 |
-| 拡張 | custom_attributes | 拡張属性 | P2 |
+権限モデル
 
-### 1.2 標準構成（拡張）
+RBAC + ABAC
 
-| ドメイン | テーブル名 | 役割 | Phase |
-| --- | --- | --- | --- |
-| アカウント | users | ユーザー主体 | P0 |
-| 認可 | roles | ロール定義 | P0 |
-| 認可 | user_roles | ロール付与 | P0 |
-| コア機能 | entities | 中核リソース | P0 |
-| コア機能 | entity_relations | 関係テーブル | P1 |
-| 補助 | comments | コメント | P1 |
-| 補助 | logs | 操作ログ | P0 |
-| 通知 | notifications | 通知管理 | P1 |
-| 拡張 | custom_attributes | 拡張属性 | P2 |
-| 監査 | audit_logs | 監査ログ | P0 |
+ID戦略
 
-## 2. ERDテンプレート（抽象版）
+UUID
 
-```mermaid
+論理削除
+
+有（tasks中心）
+
+監査ログ
+
+必須
+
+1️⃣ テーブル一覧テンプレート
+
+ドメイン
+
+テーブル名
+
+役割
+
+Phase
+
+アカウント
+
+users
+
+運営メンバー主体
+
+P0
+
+組織
+
+organizations
+
+組織スコープ境界
+
+P0
+
+組織
+
+organization_members
+
+組織内ロール付与
+
+P0
+
+コア機能
+
+tasks
+
+進捗管理の中核リソース
+
+P0
+
+コア機能
+
+task_approvals
+
+タスク承認の関係テーブル
+
+P0
+
+監査
+
+audit_logs
+
+監査ログ
+
+P0
+
+1️⃣ テーブル一覧テンプレート
+
+ドメイン
+
+テーブル名
+
+役割
+
+Phase
+
+アカウント
+
+users
+
+運営メンバー主体
+
+P0
+
+認可
+
+roles
+
+ロール定義
+
+P0
+
+認可
+
+user_roles
+
+ロール付与
+
+P0
+
+組織
+
+organizations
+
+組織情報
+
+P0
+
+組織
+
+organization_members
+
+組織スコープ権限
+
+P0
+
+コア機能
+
+tasks
+
+中核リソース
+
+P0
+
+コア機能
+
+task_approvals
+
+承認フロー管理
+
+P0
+
+補助
+
+meeting_infos
+
+定例情報管理（日時 / Meet URL）
+
+P2
+
+補助
+
+announcement_templates
+
+広報テンプレート管理
+
+P1
+
+通知
+
+discord_accounts
+
+Discordアカウント紐づけ
+
+P2
+
+通知
+
+reminders
+
+リマインド送信キュー
+
+P2
+
+監査
+
+audit_logs
+
+監査ログ
+
+P0
+
+2️⃣ ERDテンプレート（抽象版）
+
 erDiagram
-    USERS ||--o{ TASKS : owns
-    USERS ||--o{ APPROVALS : approves
-    TASKS ||--o{ APPROVALS : has
+    ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERS : contains
+    USERS ||--o{ ORGANIZATION_MEMBERS : belongs_to
+
+    USERS ||--o{ TASKS : assignee
+    USERS ||--o{ TASKS : created_by
+    TASKS ||--o{ TASK_APPROVALS : requires
+    USERS ||--o{ TASK_APPROVALS : approves
+
+    USERS ||--o{ MEETING_INFOS : updates
+    USERS ||--o{ ANNOUNCEMENT_TEMPLATES : edits
+    USERS ||--o{ DISCORD_ACCOUNTS : links
+    TASKS ||--o{ REMINDERS : triggers
+
+    USERS ||--o{ AUDIT_LOGS : acts
+    ORGANIZATIONS ||--o{ TASKS : owns
 
     USERS {
         uuid id PK
         string zitadel_sub UK
+        string discord_user_id UK
         string email UK
         string name
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    ORGANIZATIONS {
+        uuid id PK
+        string name
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    ORGANIZATION_MEMBERS {
+        uuid id PK
+        uuid organization_id FK
+        uuid user_id FK
+        string scope_role
+        timestamp created_at
     }
 
     TASKS {
         uuid id PK
+        uuid organization_id FK
         string title
-        string url
+        string phase
         string status
+        date due_date
+        string reference_url
         uuid assignee_id FK
         uuid created_by FK
         integer version
@@ -63,228 +248,484 @@ erDiagram
         timestamp deleted_at
     }
 
-    APPROVALS {
+    TASK_APPROVALS {
         uuid id PK
         uuid task_id FK
-        uuid user_id FK
+        uuid approver_id FK
+        timestamp approved_at
         timestamp created_at
     }
-```
 
-## 3. カラム定義テンプレート
+3️⃣ カラム定義テンプレート
 
-### 3.1 `users`
+users
 
-| カラム | 型 | 制約 | 説明 |
-| --- | --- | --- | --- |
-| id | UUID | PK | - |
-| zitadel_sub | String | UNIQUE NOT NULL | - |
-| email | String | UNIQUE NOT NULL | - |
-| name | String | NOT NULL | - |
+カラム
 
-### 3.2 `tasks`
+型
 
-| カラム | 型 | 制約 | 説明 |
-| --- | --- | --- | --- |
-| id | UUID | PK | - |
-| title | String | UNIQUE NOT NULL | - |
-| url | String | UNIQUE NOT NULL | - |
-| status | Enum | NOT NULL | in progress / done |
-| assignee_id (FK) | UUID | - | `users.id` |
-| created_by (FK) | UUID | NOT NULL | `users.id` |
-| version | Integer | DEFAULT 1 | - |
-| created_at | Timestamp | DEFAULT now() | - |
-| updated_at | Timestamp | DEFAULT now() | - |
-| deleted_at | Timestamp | - | - |
+制約
 
-### 3.3 `approvals`
+説明
 
-| カラム | 型 | 制約 | 説明 |
-| --- | --- | --- | --- |
-| id (PK) | UUID | NOT NULL | - |
-| task_id (FK) | UUID | NOT NULL | - |
-| user_id (FK) | UUID | NOT NULL | - |
-| created_at | Timestamp | DEFAULT now() | - |
-| unique_key | - | `(task_id, user_id)` | 複合ユニーク |
+id
 
-## 4. 権限設計テンプレート
+UUID
 
-### 4.1 RBAC
+PK
 
-- `role.level` 比較で許可判定
+内部ID
 
-### 4.2 ABAC（任意）
+zitadel_sub
 
-```json
+String
+
+UNIQUE NOT NULL
+
+OIDC subject
+
+discord_user_id
+
+String
+
+UNIQUE
+
+Discord連携ID
+
+email
+
+String
+
+UNIQUE NOT NULL
+
+連絡先
+
+name
+
+String
+
+NOT NULL
+
+表示名
+
+created_at
+
+Timestamp
+
+DEFAULT now()
+
+作成日時
+
+updated_at
+
+Timestamp
+
+DEFAULT now()
+
+更新日時
+
+Tasks
+
+カラム
+
+型
+
+制約
+
+説明
+
+id
+
+UUID
+
+PK
+
+タスクID
+
+organization_id (FK)
+
+UUID
+
+NOT NULL
+
+organizations.id
+
+title
+
+String
+
+NOT NULL
+
+タスク名
+
+phase
+
+Enum
+
+NOT NULL
+
+meeting/create/pr
+
+status
+
+Enum
+
+NOT NULL
+
+todo/in_progress/done
+
+due_date
+
+Date
+
+NOT NULL
+
+期限日
+
+reference_url
+
+String
+
+NULL
+
+関連URL（任意）
+
+assignee_id (FK)
+
+UUID
+
+NOT NULL
+
+users.id
+
+created_by (FK)
+
+UUID
+
+NOT NULL
+
+users.id
+
+version
+
+Integer
+
+DEFAULT 1
+
+楽観ロック
+
+created_at
+
+Timestamp
+
+DEFAULT now()
+
+作成日時
+
+updated_at
+
+Timestamp
+
+DEFAULT now()
+
+更新日時
+
+deleted_at
+
+Timestamp
+
+NULL
+
+論理削除
+
+Approvals
+
+カラム
+
+型
+
+制約
+
+説明
+
+id (PK)
+
+UUID
+
+NOT NULL
+
+承認ID
+
+task_id (FK)
+
+UUID
+
+NOT NULL
+
+tasks.id
+
+approver_id (FK)
+
+UUID
+
+NOT NULL
+
+users.id
+
+approved_at
+
+Timestamp
+
+NULL
+
+承認時刻
+
+created_at
+
+Timestamp
+
+DEFAULT now()
+
+作成日時
+
+(unique_key)
+
+-
+
+(task_id, approver_id)
+
+同一ユーザーの重複承認防止
+
+4️⃣ 権限設計テンプレート
+
+RBAC
+
+role.level 比較で許可判定
+
+ABAC（任意）
+
 {
-  "subject.role": "EDITOR",
-  "resource.status": "active",
-  "environment.time": "<= deadline"
+  "tenant boundary": "resource.organization_id == user.organization_id",
+  "role level": "user.scope_role.level >= required_level",
+  "abac condition": "resource.status != confirmed && now <= due_date"
 }
-```
 
-### 4.3 関連テーブル
+テーブル
 
-| テーブル | 役割 |
-| --- | --- |
-| policies | 条件定義 |
-| policy_logs | 評価ログ |
+役割
 
-## 5. 🧠 ベクトルDB設計テンプレート
+policies
 
-### 5.1 アーキテクチャ選択パターン
+条件定義
 
-#### A. 同一DB内（pgvector）
+policy_logs
 
-```text
-App
- └── PostgreSQL (RDB + Vector)
-```
+評価ログ
 
-- メリット: トランザクション整合性、シンプル
-- デメリット: 大規模時のスケール制限
+🧠 ベクトルDB設計テンプレート
 
-#### B. 外部ベクトルDB分離
+アーキテクチャ選択パターン
 
-```text
-App
- ├── RDB（メタデータ）
- └── Vector DB（検索専用）
-```
+A. 同一DB内（pgvector）
 
-- メリット: 高速検索・水平スケール、フィルタリング最適化
-- デメリット: 整合性管理が必要
+現行スコープ外（将来検討）。
 
-### 5.2 ベクトル格納設計パターン
+メリット
 
-#### パターン1: 既存テーブルに直接保持（小規模向け）
+将来の検索拡張に流用しやすい
 
-```sql
-ALTER TABLE entities
-ADD COLUMN embedding VECTOR(1536);
-```
+デメリット
 
-適用条件:
-- 1エンティティ = 1ベクトル
-- 更新頻度が低い
+MVPの目的（進捗可視化）に不要
 
-#### パターン2: 専用ベクトルテーブル（推奨）
+B. 外部ベクトルDB分離
 
-```mermaid
+現行スコープ外（将来検討）。
+
+メリット
+
+将来の高度検索でスケールしやすい
+
+デメリット
+
+運用コストが増える
+
+ベクトル格納設計パターン
+
+🔹 パターン1：既存テーブルに直接持つ（小規模向け）
+
+-- 現フェーズでは未実装方針
+-- ALTER TABLE tasks ADD COLUMN embedding VECTOR(1536);
+
+適用条件
+
+将来、自然言語検索を導入する場合のみ検討
+
+🔹 パターン2：専用ベクトルテーブル（推奨）
+
 erDiagram
-    entities {
+    TASKS {
         uuid id PK
         varchar title
     }
 
-    embeddings {
+    EMBEDDINGS {
         uuid id PK
-        uuid entity_id FK
-        varchar content_type
+        uuid task_id FK
         vector embedding
         jsonb metadata
         timestamp created_at
     }
 
-    entities ||--o{ embeddings : "持つ"
-```
+    TASKS ||--o{ EMBEDDINGS : "将来検討"
 
-`embeddings` テーブル定義:
+embeddings テーブル定義テンプレ
 
-| カラム | 型 | 説明 |
-| --- | --- | --- |
-| id | UUID | PK |
-| entity_id | UUID | 紐づくリソース |
-| content_type | VARCHAR | title/body/comment 等 |
-| embedding | VECTOR(N) | ベクトル |
-| metadata | JSONB | フィルタ用属性 |
-| model_name | VARCHAR | 使用モデル |
-| created_at | TIMESTAMP | - |
+カラム
 
-## 6. 検索設計テンプレート
+型
 
-### 6.1 メタデータ設計（検索フィルタ用）
+説明
 
-```json
+id
+
+UUID
+
+PK
+
+task_id
+
+UUID
+
+紐づくタスク
+
+content_type
+
+VARCHAR
+
+title/body 等
+
+embedding
+
+VECTOR(N)
+
+現行未使用
+
+metadata
+
+JSONB
+
+将来の検索フィルタ用
+
+model_name
+
+VARCHAR
+
+将来の埋め込みモデル名
+
+created_at
+
+TIMESTAMP
+
+作成日時
+
+3️⃣ メタデータ設計（検索フィルタ用）
+
 {
-  "group_id": "uuid",
-  "status": "active",
-  "visibility": "public",
-  "language": "ja",
+  "organization_id": "uuid",
+  "phase": "meeting",
+  "status": "done",
   "created_by": "uuid"
 }
-```
 
-※ RAGやマルチテナントでは必須。
+※ 現行スコープ外、将来検討
 
-### 6.2 インデックス設計
+4️⃣ インデックス設計
 
-pgvector（Cosine距離）:
+pgvector（Cosine距離）
 
-```sql
-CREATE INDEX idx_embeddings_vector
-ON embeddings
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);
-```
+-- 現フェーズでは作成しない方針
+-- CREATE INDEX idx_embeddings_vector ON embeddings USING ivfflat (embedding vector_cosine_ops);
 
-HNSW（高速）:
+HNSW（高速）
 
-```sql
-CREATE INDEX idx_embeddings_hnsw
-ON embeddings
-USING hnsw (embedding vector_cosine_ops);
-```
+-- 現フェーズでは作成しない方針
+-- CREATE INDEX idx_embeddings_hnsw ON embeddings USING hnsw (embedding vector_cosine_ops);
 
-### 6.3 クエリテンプレ（類似検索 TopK）
+5️⃣ クエリテンプレ
 
-```sql
-SELECT entity_id, 1 - (embedding <=> :query_vector) AS similarity
-FROM embeddings
-WHERE metadata->>'group_id' = :group_id
-ORDER BY embedding <=> :query_vector
-LIMIT 10;
-```
+類似検索（TopK）
 
-### 6.4 更新戦略テンプレ
+-- 現フェーズでは実装しない方針
+-- SELECT task_id FROM embeddings ORDER BY embedding <=> :query_vector LIMIT 10;
 
-| 戦略 | 説明 |
-| --- | --- |
-| 同期更新 | レコード保存時に即生成 |
-| 非同期キュー | 保存→Job→生成 |
-| 再生成バッチ | モデル変更時に全更新 |
+6️⃣ 更新戦略テンプレ
 
-## 7. RAG設計テンプレ
+戦略
 
-```mermaid
+説明
+
+同期更新
+
+現フェーズでは未採用
+
+非同期キュー
+
+将来導入時に候補
+
+再生成バッチ
+
+将来導入時に候補
+
+7️⃣ RAG設計テンプレ
+
 flowchart LR
-    UserQuery["UserQuery"] --> EmbedQuery["EmbedQuery"]
-    EmbedQuery --> VectorSearch["VectorSearch"]
-    VectorSearch --> ContextChunks["ContextChunks"]
-    ContextChunks --> LLM["LLM"]
-    LLM --> Answer["Answer"]
-```
+    UserQuery --> ScopeCheck
+    ScopeCheck -->|Current| TaskSearch
+    ScopeCheck -->|Future| VectorSearch
 
-### 7.1 チャンク設計指針
+チャンク設計指針
 
-| 項目 | 推奨 |
-| --- | --- |
-| 文字数 | 300〜800 tokens |
-| オーバーラップ | 10〜20% |
-| 単位 | 意味単位（段落） |
+項目
 
-### 7.2 多ベクトル対応
+推奨
 
-用途別に分ける:
+文字数
 
-| 種類 | 例 |
-| --- | --- |
-| semantic_vector | 本文検索 |
-| keyword_vector | タイトル重視 |
-| user_profile_vector | レコメンド |
-| skill_vector | マッチング |
+現フェーズでは未定義
 
-```sql
-vector_semantic VECTOR(1536),
-vector_title VECTOR(1536)
-```
+オーバーラップ
+
+現フェーズでは未定義
+
+単位
+
+現フェーズでは未定義
+
+8️⃣ 多ベクトル対応
+
+用途別に分ける：
+
+種類
+
+例
+
+semantic_vector
+
+現行では未使用
+
+keyword_vector
+
+現行では未使用
+
+user_profile_vector
+
+現行では未使用
+
+skill_vector
+
+現行では未使用
+
+-- 現フェーズ未採用
+-- vector_semantic VECTOR(1536),
+-- vector_title VECTOR(1536)

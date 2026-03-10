@@ -17,74 +17,58 @@ System Architecture
 flowchart LR
 
     %% =======================
-    %% Edge Layer
+    %% User / Edge Layer
     %% =======================
+    USER["Users<br/>(StepByCode運営)"]:::entry
     subgraph EDGE["Edge Layer"]
-        CDN["CDN / Edge Network"]:::edge
-        WAF["WAF"]:::edge
-        EDGE_FUNC["Edge Functions<br/>(Auth / Rewrite / Header Injection)"]:::svc
-        KVS["Edge KVS<br/>(署名鍵 / 設定値)"]:::data
+        CDN["Vercel CDN"]:::edge
+        EDGE_FUNC["Vercel Edge<br/>(Rewrite / Header Injection)"]:::svc
     end
 
     %% =======================
     %% Application Layer
     %% =======================
     subgraph APP["Application Layer"]
-        subgraph VPC_APP["VPC - Application"]
-            LB["Load Balancer / API Gateway"]:::entry
-            APP_SVC["Application Service<br/>(Container / Serverless)"]:::app
-            CACHE["Cache (Redis / MemoryDB)"]:::cache
-        end
+        FE["Frontend Service<br/>(Next.js on Vercel)"]:::app
+        API["API Service<br/>(Go + Echo on Coolify)"]:::app
+        BOT["Discord Bot Service<br/>(Go on Coolify)"]:::app
     end
 
     %% =======================
     %% Identity Layer
     %% =======================
     subgraph IDENTITY["Identity Layer"]
-        subgraph VPC_ID["VPC - Identity"]
-            AUTH_SVC["Auth / Middleware"]:::svc
-            IDP["Identity Provider"]:::svc
-            AUTH_DB["Auth Database"]:::db
-        end
+        IDP["ZITADEL Selfhosted<br/>(OIDC)"]:::svc
     end
 
     %% =======================
     %% Data Layer
     %% =======================
     subgraph DATA["Data Layer"]
-        RDB["Primary RDB"]:::db
-        VECTOR["Vector DB"]:::db
-        STORAGE["Object Storage"]:::data
+        RDB["Primary PostgreSQL"]:::db
         LOGS["Log Storage"]:::data
     end
 
-    %% =======================
-    %% 接続
-    %% =======================
-    CDN --> WAF
-    WAF --> EDGE_FUNC
-    EDGE_FUNC --> KVS
-    EDGE_FUNC --> LB
-    LB --> APP_SVC
-    APP_SVC --> CACHE
-    APP_SVC --> RDB
-    APP_SVC --> VECTOR
-    APP_SVC --> STORAGE
-    APP_SVC --> AUTH_SVC
-    AUTH_SVC --> IDP
-    IDP --> AUTH_DB
-    APP_SVC --> LOGS
+    DISCORD["Discord API"]:::svc
 
-    %% =======================
-    %% Class Definitions
-    %% =======================
+    USER --> CDN
+    CDN --> EDGE_FUNC
+    EDGE_FUNC --> FE
+    FE --> IDP
+    FE --> API
+    API --> RDB
+    API --> LOGS
+    BOT --> LOGS
+    API --> BOT
+    API --> DISCORD
+    BOT --> DISCORD
+
     classDef edge fill:#fff2e6,stroke:#ff7a00,color:#4a2f00;
     classDef svc fill:#eef9f1,stroke:#2a9d8f,color:#073b4c;
     classDef app fill:#e8f1ff,stroke:#3572ef,color:#0a2540;
     classDef entry fill:#eaf7ff,stroke:#0091d5,color:#073b4c;
     classDef db fill:#f5faff,stroke:#2b6cb0,color:#0a2a4a;
     classDef data fill:#fff0fb,stroke:#b1008a,color:#4a0040;
-    classDef cache fill:#f7faff,stroke:#4a90e2,color:#093a7a;
 
 System Components
 
@@ -104,55 +88,45 @@ Edge Functions
 
 役割：
 
-JWT検証（可能ならEdgeで）
+共通ヘッダー注入
 
-ヘッダー注入
+キャッシュ制御
 
-リライト
-
-早期Reject（Unauthorized）
+静的ルーティング最適化
 
 設計意図：
 
-全リクエストにかかる処理はEdgeへ
+フロント配信負荷をEdgeへ集約
 
-オリジン負荷軽減
-
-レイテンシ最小化
+アプリ本体の応答を安定化
 
 2️⃣ Application Layer
 
 Application Service
 
-Container (ECS/Kubernetes)
+Frontend Service (Vercel)
 
-Serverless (Cloud Run/Lambda)
+API Service (Coolify)
 
-またはVM
+Discord Bot Service (Coolify)
 
 責務：
 
-ビジネスロジック
+Frontend: 画面表示 / OIDCログイン導線
 
-API処理
+API: タスク・承認・監査ログの中核処理
 
-権限チェック（最終判定）
-
-Cache
-
-用途：
-
-セッション
-
-頻繁参照データ
-
-レート制限
+Bot: リマインド通知・Discord連携
 
 3️⃣ Identity Layer（分離推奨）
 
 Auth Middleware
 
+API側JWT検証 + RBAC/ABAC最終判定
+
 Identity Provider
+
+ZITADEL Selfhosted
 
 設計原則：
 
@@ -160,17 +134,17 @@ Identity Provider
 
 理由
 
-アプリと分離     
+アプリと分離
 
-将来のIDP差し替え 
+ID基盤を交換可能にするため
 
-独立スケール     
+独立スケール
 
-認証集中時間帯対応  
+ログイン集中時に追従するため
 
-DB直接アクセス禁止 
+DB直接アクセス禁止
 
-責任分離       
+認証責務を分離するため
 
 4️⃣ Data Layer
 
@@ -178,83 +152,53 @@ DB直接アクセス禁止
 
 用途
 
-RDB            
+RDB
 
-トランザクション   
+タスク / 承認 / 組織 / 監査のトランザクション管理
 
-Vector DB      
+Log Storage
 
-類似検索 / RAG 
-
-Object Storage 
-
-ファイル       
-
-Log Storage    
-
-監査・分析      
+アプリログ / アクセスログ / 監査ログの保存
 
 設計意図
 
-認可処理を高速化するために
+小規模運営に必要な構成へ絞り、運用負荷を下げる
 
-EdgeでJWT検証
-
-DBアクセス不要
-
-KVSに署名鍵保持
-
-Stateless認可
-
-理由：
-
-認可は全リクエストに発生
-
-レイテンシ削減が最重要
+Edgeで先に配信と共通処理を行い、APIは業務処理に集中
 
 IdentityとApplicationの分離
 
 なぜ分離するか？
 
-外部IDP切替可能
+OIDC基盤の独立運用を可能にする
 
-アプリロジックと認証ロジック分離
-
-セキュリティ境界明確化
+権限判定の責任境界を明確にする
 
 Containerを使う理由（Lambdaではなく）
 
 Lambdaの課題
 
-コールドスタート
+コールドスタートで通知遅延が発生しやすい
 
-DB接続枯渇
-
-NAT経由問題
+長時間接続・常駐処理の実装が煩雑
 
 Containerの利点
 
-コネクションプーリング
+Bot常駐処理と相性がよい
 
-VPC内完結
+API/Botを同一運用で管理しやすい
 
-長時間接続可能
+Discord通知責務を分離する理由
 
-VectorDBを分離する理由
+通知失敗時の再試行をAPI本体から分離できる
 
-類似検索は高CPU負荷
-
-RDBと負荷特性が違う
-
-将来スケール前提
+レート制限対応をBot側に閉じ込められる
 
 Cacheを利用する理由
 
-トークン検証後のセッション短期保存
+現フェーズでは専用Cacheは非採用
 
-レート制限
-
-読み取り最適化
+必要時にセッション/レート制限用途で追加予定
 
 スケーリング戦略
 
@@ -264,26 +208,26 @@ Cacheを利用する理由
 
 方法
 
-Edge   
+Edge
 
-自動スケール          
+Vercelの自動スケール
 
-App    
+App
 
-Auto Scaling    
+CoolifyでAPI/Botを個別スケール
 
-DB     
+DB
 
-Read Replica    
+接続上限監視 + 必要時Read Replica
 
-Vector 
+Bot
 
-HNSW / Sharding 
+キュー長に応じたレプリカ追加
 
 局所アクセス対策
 
-事前Warm-up
-
-Scheduled Scale
+ログイン時間帯のピークを監視
 
 Connection Pool管理
+
+通知再試行のバックオフ制御

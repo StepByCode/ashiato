@@ -6,25 +6,25 @@
 
 内容
 
-対象システム 
+対象システム
 
-Web / API / Batch / Edge 
+Frontend / API / Discord Bot
 
-ログ方式   
+ログ方式
 
-構造化ログ（JSON）必須            
+構造化ログ（JSON）必須
 
-集約方式   
+集約方式
 
-Centralized Logging      
+Centralized Logging
 
-保持期間   
+保持期間
 
-30日 / 90日 / 1年           
+30日 / 90日 / 1年
 
-個人情報   
+個人情報
 
-マスキング必須                  
+マスキング必須
 
 1️⃣ ログ分類
 
@@ -34,41 +34,41 @@ Centralized Logging
 
 出力対象
 
-Application Log    
+Application Log
 
-動作確認・デバッグ 
+動作確認・デバッグ
 
-開発・運用  
+開発・運用
 
-Access Log         
+Access Log
 
-リクエスト追跡   
+リクエスト追跡
 
-運用     
+運用
 
-Audit Log          
+Audit Log
 
-セキュリティ監査  
+セキュリティ監査
 
-セキュリティ 
+セキュリティ
 
-Security Log       
+Security Log
 
-異常検知      
+異常検知
 
-SOC    
+運用
 
-Business Log       
+Business Log
 
-KPI分析     
+KPI分析
 
-BI     
+運営
 
-Infrastructure Log 
+Infrastructure Log
 
-リソース監視    
+リソース監視
 
-SRE    
+SRE
 
 2️⃣ ログレベル定義
 
@@ -76,40 +76,40 @@ SRE
 
 用途
 
-DEBUG 
+DEBUG
 
-詳細情報（本番無効可） 
+詳細情報（本番無効可）
 
-INFO  
+INFO
 
-正常動作        
+正常動作
 
-WARN  
+WARN
 
-想定内の異常      
+想定内の異常
 
-ERROR 
+ERROR
 
-処理失敗        
+処理失敗
 
-FATAL 
+FATAL
 
-サービス停止級     
+サービス停止級
 
 3️⃣ 構造化ログフォーマット（JSON標準）
 
 {
-  "timestamp": "2025-01-01T10:00:00Z",
+  "timestamp": "2026-03-01T10:00:00Z",
   "level": "INFO",
   "service": "api-service",
   "environment": "prod",
   "trace_id": "uuid",
   "user_id": "uuid",
-  "tenant_id": "uuid",
-  "action": "entity.update",
-  "resource_type": "entity",
+  "organization_id": "uuid",
+  "action": "task.update",
+  "resource_type": "task",
   "resource_id": "uuid",
-  "message": "Entity updated successfully",
+  "message": "Task updated successfully",
   "metadata": {}
 }
 
@@ -119,33 +119,33 @@ FATAL
 
 理由
 
-timestamp 
+timestamp
 
-時系列追跡      
+時系列追跡
 
-level     
+level
 
-重要度        
+重要度
 
-service   
+service
 
-マイクロサービス識別 
+サービス識別
 
-trace_id  
+trace_id
 
-分散トレーシング   
+分散トレーシング
 
-user_id   
+user_id
 
-監査         
+監査
 
-tenant_id 
+organization_id
 
-マルチテナント    
+組織スコープ境界
 
-action    
+action
 
-操作識別       
+操作識別
 
 5️⃣ Application Log設計
 
@@ -159,10 +159,12 @@ action
 
 {
   "level": "ERROR",
-  "service": "api",
+  "service": "api-service",
   "trace_id": "abc-123",
-  "message": "Database connection failed",
-  "error_code": "DB_CONN_TIMEOUT"
+  "organization_id": "org-001",
+  "action": "approval.grant",
+  "message": "Approval insert failed",
+  "error_code": "DB_WRITE_FAILED"
 }
 
 6️⃣ Access Log設計
@@ -170,9 +172,20 @@ action
 {
   "timestamp": "...",
   "method": "POST",
-  "path": "/api/entities",
+  "path": "/api/tasks",
+  "status": 201,
+  "latency_ms": 110,
+  "ip": "xxx.xxx.xxx.xxx",
+  "user_agent": "...",
+  "trace_id": "..."
+}
+
+{
+  "timestamp": "...",
+  "method": "POST",
+  "path": "/api/approvals",
   "status": 200,
-  "latency_ms": 120,
+  "latency_ms": 85,
   "ip": "xxx.xxx.xxx.xxx",
   "user_agent": "...",
   "trace_id": "..."
@@ -182,22 +195,25 @@ action
 
 対象操作
 
+承認操作
+
 ロール変更
 
 データ削除
 
-設定変更
+Discord通知トリガー
 
 認証失敗
 
 {
   "timestamp": "...",
   "user_id": "uuid",
-  "action": "role.grant",
-  "resource_type": "user",
+  "organization_id": "uuid",
+  "action": "reminder.dispatch",
+  "resource_type": "task",
   "resource_id": "uuid",
-  "before": {"role": "member"},
-  "after": {"role": "admin"},
+  "before": {"status": "in_progress"},
+  "after": {"status": "done"},
   "result": "allow",
   "ip": "..."
 }
@@ -208,29 +224,29 @@ action
 
 記録
 
-ログイン失敗    
+ログイン失敗
 
-必須 
+必須
 
-異常アクセス    
+異常アクセス
 
-必須 
+必須
 
-レート制限発動   
+レート制限発動
 
-推奨 
+推奨
 
-ABAC deny 
+ABAC deny
 
-推奨 
+推奨
 
 9️⃣ 分散トレーシング設計
 
 flowchart LR
-    Client --> Edge
-    Edge --> API
+    Client --> Frontend
+    Frontend --> API
     API --> DB
-    API --> Vector
+    API --> Bot
 
 trace_id必須
 
@@ -241,7 +257,9 @@ HTTP Headerで伝播
 🔟 ログ保存構成
 
 flowchart LR
-    App --> LogAgent
+    Frontend --> LogAgent
+    API --> LogAgent
+    Bot --> LogAgent
     LogAgent --> LogCollector
     LogCollector --> LogStorage
     LogStorage --> Monitoring
@@ -252,21 +270,21 @@ flowchart LR
 
 保持期間
 
-Application 
+Application
 
-30日  
+30日
 
-Access      
+Access
 
-90日  
+90日
 
-Audit       
+Audit
 
-1年以上 
+1年以上
 
-Security    
+Security
 
-1年以上 
+1年以上
 
 12️⃣ マスキングポリシー
 
@@ -274,40 +292,42 @@ Security
 
 方針
 
-パスワード 
+パスワード
 
-絶対出力禁止   
+絶対出力禁止
 
-トークン  
+トークン
 
-マスク      
+マスク
 
-メール   
+メール
 
-ハッシュ化    
+ハッシュ化
 
-IP    
+IP
 
-必要に応じ匿名化 
+必要に応じ匿名化
 
 13️⃣ フェーズ導入
 
 Phase0:
 - Application Log
 - Access Log
-- 最低限のAudit Log
+- 最低限のAudit Log（task.create / task.complete / approval.grant）
 
 Phase1:
 - 構造化ログ統一
 - Centralized Logging
+- role.change 監査ログ追加
 
 Phase2:
 - 分散トレーシング
+- reminder.dispatch の監査連携
 - セキュリティイベント自動検知
 
 Phase3:
-- SIEM連携
-- 異常検知AI
+- SIEM連携（将来検討）
+- 異常検知AI（将来検討）
 
 14️⃣ コスト最適化
 
@@ -315,14 +335,14 @@ Phase3:
 
 説明
 
-DEBUG無効 
+DEBUG無効
 
-本番削減      
+本番削減
 
-サンプリング  
+サンプリング
 
-高トラフィック対策 
+高トラフィック対策
 
-ローテーション 
+ローテーション
 
-古いログ圧縮    
+古いログ圧縮

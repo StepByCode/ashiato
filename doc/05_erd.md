@@ -10,15 +10,15 @@
 
 権限モデル
 
-RBAC
+RBAC + ABAC
 
 ID戦略
 
-Auto Increment
+UUID
 
 論理削除
 
-無
+有（tasks中心）
 
 監査ログ
 
@@ -38,7 +38,23 @@ Phase
 
 users
 
-ユーザー主体
+運営メンバー主体
+
+P0
+
+組織
+
+organizations
+
+組織スコープ境界
+
+P0
+
+組織
+
+organization_members
+
+組織内ロール付与
 
 P0
 
@@ -46,25 +62,25 @@ P0
 
 tasks
 
-中核リソース
+進捗管理の中核リソース
 
 P0
 
 コア機能
 
-approvals
+task_approvals
 
-関係テーブル
+タスク承認の関係テーブル
 
 P0
 
-拡張
+監査
 
-custom_attributes
+audit_logs
 
-拡張属性
+監査ログ
 
-P2
+P0
 
 1️⃣ テーブル一覧テンプレート
 
@@ -80,7 +96,7 @@ Phase
 
 users
 
-ユーザー主体
+運営メンバー主体
 
 P0
 
@@ -100,9 +116,25 @@ user_roles
 
 P0
 
+組織
+
+organizations
+
+組織情報
+
+P0
+
+組織
+
+organization_members
+
+組織スコープ権限
+
+P0
+
 コア機能
 
-entities
+tasks
 
 中核リソース
 
@@ -110,41 +142,41 @@ P0
 
 コア機能
 
-entity_relations
+task_approvals
 
-関係テーブル
-
-P1
-
-補助
-
-comments
-
-コメント
-
-P1
-
-補助
-
-logs
-
-操作ログ
+承認フロー管理
 
 P0
 
-通知
+補助
 
-notifications
+meeting_infos
 
-通知管理
+定例情報管理（日時 / Meet URL）
+
+P2
+
+補助
+
+announcement_templates
+
+広報テンプレート管理
 
 P1
 
-拡張
+通知
 
-custom_attributes
+discord_accounts
 
-拡張属性
+Discordアカウント紐づけ
+
+P2
+
+通知
+
+reminders
+
+リマインド送信キュー
 
 P2
 
@@ -159,22 +191,55 @@ P0
 2️⃣ ERDテンプレート（抽象版）
 
 erDiagram
-    USERS ||--o{ TASKS : 
-    USERS ||--o{ APPROVALS : 
-    TASKS ||--o{ APPROVALS : 
+    ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERS : contains
+    USERS ||--o{ ORGANIZATION_MEMBERS : belongs_to
+
+    USERS ||--o{ TASKS : assignee
+    USERS ||--o{ TASKS : created_by
+    TASKS ||--o{ TASK_APPROVALS : requires
+    USERS ||--o{ TASK_APPROVALS : approves
+
+    USERS ||--o{ MEETING_INFOS : updates
+    USERS ||--o{ ANNOUNCEMENT_TEMPLATES : edits
+    USERS ||--o{ DISCORD_ACCOUNTS : links
+    TASKS ||--o{ REMINDERS : triggers
+
+    USERS ||--o{ AUDIT_LOGS : acts
+    ORGANIZATIONS ||--o{ TASKS : owns
 
     USERS {
         uuid id PK
         string zitadel_sub UK
+        string discord_user_id UK
         string email UK
         string name
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    ORGANIZATIONS {
+        uuid id PK
+        string name
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    ORGANIZATION_MEMBERS {
+        uuid id PK
+        uuid organization_id FK
+        uuid user_id FK
+        string scope_role
+        timestamp created_at
     }
 
     TASKS {
         uuid id PK
+        uuid organization_id FK
         string title
-        string url
+        string phase
         string status
+        date due_date
+        string reference_url
         uuid assignee_id FK
         uuid created_by FK
         integer version
@@ -183,10 +248,11 @@ erDiagram
         timestamp deleted_at
     }
 
-    APPROVALS {
+    TASK_APPROVALS {
         uuid id PK
         uuid task_id FK
-        uuid user_id FK
+        uuid approver_id FK
+        timestamp approved_at
         timestamp created_at
     }
 
@@ -208,15 +274,23 @@ UUID
 
 PK
 
-
+内部ID
 
 zitadel_sub
 
 String
 
-UNIQUE NOT NUL
+UNIQUE NOT NULL
 
+OIDC subject
 
+discord_user_id
+
+String
+
+UNIQUE
+
+Discord連携ID
 
 email
 
@@ -224,7 +298,7 @@ String
 
 UNIQUE NOT NULL
 
-
+連絡先
 
 name
 
@@ -232,7 +306,23 @@ String
 
 NOT NULL
 
+表示名
 
+created_at
+
+Timestamp
+
+DEFAULT now()
+
+作成日時
+
+updated_at
+
+Timestamp
+
+DEFAULT now()
+
+更新日時
 
 Tasks
 
@@ -250,23 +340,31 @@ UUID
 
 PK
 
+タスクID
 
+organization_id (FK)
+
+UUID
+
+NOT NULL
+
+organizations.id
 
 title
 
 String
 
-UNIQUE NOT NUL
+NOT NULL
 
+タスク名
 
+phase
 
-url
+Enum
 
-String
+NOT NULL
 
-UNIQUE NOT NULL
-
-
+meeting/create/pr
 
 status
 
@@ -274,13 +372,29 @@ Enum
 
 NOT NULL
 
-in progress/Done
+todo/in_progress/done
+
+due_date
+
+Date
+
+NOT NULL
+
+期限日
+
+reference_url
+
+String
+
+NULL
+
+関連URL（任意）
 
 assignee_id (FK)
 
 UUID
 
-
+NOT NULL
 
 users.id
 
@@ -298,7 +412,7 @@ Integer
 
 DEFAULT 1
 
-
+楽観ロック
 
 created_at
 
@@ -306,7 +420,7 @@ Timestamp
 
 DEFAULT now()
 
-
+作成日時
 
 updated_at
 
@@ -314,15 +428,15 @@ Timestamp
 
 DEFAULT now()
 
-
+更新日時
 
 deleted_at
 
 Timestamp
 
+NULL
 
-
-
+論理削除
 
 Approvals
 
@@ -340,7 +454,7 @@ UUID
 
 NOT NULL
 
-
+承認ID
 
 task_id (FK)
 
@@ -348,15 +462,23 @@ UUID
 
 NOT NULL
 
+tasks.id
 
-
-user_id (FK)
+approver_id (FK)
 
 UUID
 
 NOT NULL
 
+users.id
 
+approved_at
+
+Timestamp
+
+NULL
+
+承認時刻
 
 created_at
 
@@ -364,17 +486,15 @@ Timestamp
 
 DEFAULT now()
 
-
+作成日時
 
 (unique_key)
 
 -
 
-(task_id, user_id)
+(task_id, approver_id)
 
-
-
-
+同一ユーザーの重複承認防止
 
 4️⃣ 権限設計テンプレート
 
@@ -385,9 +505,9 @@ role.level 比較で許可判定
 ABAC（任意）
 
 {
-  "subject.role": "EDITOR",
-  "resource.status": "active",
-  "environment.time": "<= deadline"
+  "tenant boundary": "resource.organization_id == user.organization_id",
+  "role level": "user.scope_role.level >= required_level",
+  "abac condition": "resource.status != confirmed && now <= due_date"
 }
 
 テーブル
@@ -408,66 +528,56 @@ policy_logs
 
 A. 同一DB内（pgvector）
 
-App
- └── PostgreSQL (RDB + Vector)
+現行スコープ外（将来検討）。
 
 メリット
 
-トランザクション整合性
-
-シンプル
+将来の検索拡張に流用しやすい
 
 デメリット
 
-大規模時のスケール制限
+MVPの目的（進捗可視化）に不要
 
 B. 外部ベクトルDB分離
 
-App
- ├── RDB（メタデータ）
- └── Vector DB（検索専用）
+現行スコープ外（将来検討）。
 
 メリット
 
-高速検索・水平スケール
-
-フィルタリング最適化
+将来の高度検索でスケールしやすい
 
 デメリット
 
-整合性管理が必要
+運用コストが増える
 
 ベクトル格納設計パターン
 
 🔹 パターン1：既存テーブルに直接持つ（小規模向け）
 
-ALTER TABLE entities
-ADD COLUMN embedding VECTOR(1536);
+-- 現フェーズでは未実装方針
+-- ALTER TABLE tasks ADD COLUMN embedding VECTOR(1536);
 
 適用条件
 
-1エンティティ = 1ベクトル
-
-更新頻度低い
+将来、自然言語検索を導入する場合のみ検討
 
 🔹 パターン2：専用ベクトルテーブル（推奨）
 
 erDiagram
-    entities {
+    TASKS {
         uuid id PK
         varchar title
     }
 
-    embeddings {
+    EMBEDDINGS {
         uuid id PK
-        uuid entity_id FK
-        varchar content_type
+        uuid task_id FK
         vector embedding
         jsonb metadata
         timestamp created_at
     }
 
-    entities ||--o{ embeddings : "持つ"
+    TASKS ||--o{ EMBEDDINGS : "将来検討"
 
 embeddings テーブル定義テンプレ
 
@@ -483,78 +593,71 @@ UUID
 
 PK
 
-entity_id
+task_id
 
 UUID
 
-紐づくリソース
+紐づくタスク
 
 content_type
 
 VARCHAR
 
-title/body/comment 等
+title/body 等
 
 embedding
 
 VECTOR(N)
 
-ベクトル
+現行未使用
 
 metadata
 
 JSONB
 
-フィルタ用属性
+将来の検索フィルタ用
 
 model_name
 
 VARCHAR
 
-使用モデル
+将来の埋め込みモデル名
 
 created_at
 
 TIMESTAMP
 
-
+作成日時
 
 3️⃣ メタデータ設計（検索フィルタ用）
 
 {
-  "group_id": "uuid",
-  "status": "active",
-  "visibility": "public",
-  "language": "ja",
+  "organization_id": "uuid",
+  "phase": "meeting",
+  "status": "done",
   "created_by": "uuid"
 }
 
-※ RAGやマルチテナントでは必須
+※ 現行スコープ外、将来検討
 
 4️⃣ インデックス設計
 
 pgvector（Cosine距離）
 
-CREATE INDEX idx_embeddings_vector
-ON embeddings
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);
+-- 現フェーズでは作成しない方針
+-- CREATE INDEX idx_embeddings_vector ON embeddings USING ivfflat (embedding vector_cosine_ops);
 
 HNSW（高速）
 
-CREATE INDEX idx_embeddings_hnsw
-ON embeddings
-USING hnsw (embedding vector_cosine_ops);
+-- 現フェーズでは作成しない方針
+-- CREATE INDEX idx_embeddings_hnsw ON embeddings USING hnsw (embedding vector_cosine_ops);
 
 5️⃣ クエリテンプレ
 
 類似検索（TopK）
 
-SELECT entity_id, 1 - (embedding <=> :query_vector) AS similarity
-FROM embeddings
-WHERE metadata->>'group_id' = :group_id
-ORDER BY embedding <=> :query_vector
-LIMIT 10;
+-- 現フェーズでは実装しない方針
+-- SELECT task_id FROM embeddings ORDER BY embedding <=> :query_vector LIMIT 10;
 
 6️⃣ 更新戦略テンプレ
 
@@ -564,24 +667,22 @@ LIMIT 10;
 
 同期更新
 
-レコード保存時に即生成
+現フェーズでは未採用
 
 非同期キュー
 
-保存→Job→生成
+将来導入時に候補
 
 再生成バッチ
 
-モデル変更時に全更新
+将来導入時に候補
 
 7️⃣ RAG設計テンプレ
 
 flowchart LR
-    UserQuery --> EmbedQuery
-    EmbedQuery --> VectorSearch
-    VectorSearch --> ContextChunks
-    ContextChunks --> LLM
-    LLM --> Answer
+    UserQuery --> ScopeCheck
+    ScopeCheck -->|Current| TaskSearch
+    ScopeCheck -->|Future| VectorSearch
 
 チャンク設計指針
 
@@ -591,15 +692,15 @@ flowchart LR
 
 文字数
 
-300〜800 tokens
+現フェーズでは未定義
 
 オーバーラップ
 
-10〜20%
+現フェーズでは未定義
 
 単位
 
-意味単位（段落）
+現フェーズでは未定義
 
 8️⃣ 多ベクトル対応
 
@@ -611,19 +712,20 @@ flowchart LR
 
 semantic_vector
 
-本文検索
+現行では未使用
 
 keyword_vector
 
-タイトル重視
+現行では未使用
 
 user_profile_vector
 
-レコメンド
+現行では未使用
 
 skill_vector
 
-マッチング
+現行では未使用
 
-vector_semantic VECTOR(1536),
-vector_title VECTOR(1536)
+-- 現フェーズ未採用
+-- vector_semantic VECTOR(1536),
+-- vector_title VECTOR(1536)

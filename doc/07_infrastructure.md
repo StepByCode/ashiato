@@ -1,7 +1,8 @@
-Infrastructure Guidelines
+# Infrastructure Guidelines
 
-System Architecture
+## System Architecture
 
+```mermaid
 %%{init: {
   "theme": "base",
   "themeVariables": {
@@ -15,35 +16,23 @@ System Architecture
   "flowchart": { "curve": "basis", "nodeSpacing": 60, "rankSpacing": 80 }
 }}%%
 flowchart LR
-
-    %% =======================
-    %% User / Edge Layer
-    %% =======================
     USER["Users<br/>(StepByCode運営)"]:::entry
+
     subgraph EDGE["Edge Layer"]
         CDN["Vercel CDN"]:::edge
         EDGE_FUNC["Vercel Edge<br/>(Rewrite / Header Injection)"]:::svc
     end
 
-    %% =======================
-    %% Application Layer
-    %% =======================
     subgraph APP["Application Layer"]
         FE["Frontend Service<br/>(Next.js on Vercel)"]:::app
         API["API Service<br/>(Go + Echo on Coolify)"]:::app
         BOT["Discord Bot Service<br/>(Go on Coolify)"]:::app
     end
 
-    %% =======================
-    %% Identity Layer
-    %% =======================
     subgraph IDENTITY["Identity Layer"]
         IDP["ZITADEL Selfhosted<br/>(OIDC)"]:::svc
     end
 
-    %% =======================
-    %% Data Layer
-    %% =======================
     subgraph DATA["Data Layer"]
         RDB["Primary PostgreSQL"]:::db
         LOGS["Log Storage"]:::data
@@ -69,165 +58,88 @@ flowchart LR
     classDef entry fill:#eaf7ff,stroke:#0091d5,color:#073b4c;
     classDef db fill:#f5faff,stroke:#2b6cb0,color:#0a2a4a;
     classDef data fill:#fff0fb,stroke:#b1008a,color:#4a0040;
+```
 
-System Components
+## System Components
 
-1️⃣ Edge Layer
+### 1. Edge Layer
 
-CDN / Edge Network
+#### CDN / Edge Network
 
-静的アセット配信
+- 静的アセット配信
+- TLS終端
+- キャッシュ制御
 
-TLS終端
+#### Edge Functions
 
-キャッシュ
+- ヘッダー注入
+- リライト
+- 早期リジェクト（未認証アクセス）
 
-地理的最適化
+### 2. Application Layer
 
-Edge Functions
+#### Frontend Service
 
-役割：
+- Next.js on Vercel
+- 認証フローの起点
+- API呼び出しと画面描画
 
-共通ヘッダー注入
+#### API Service
 
-キャッシュ制御
+- Go + Echo
+- ビジネスロジック
+- 認可の最終判定
+- DB永続化
 
-静的ルーティング最適化
+#### Discord Bot Service
 
-設計意図：
+- 定例/締切通知
+- Discord API連携
+- API連携によるステータス通知
 
-フロント配信負荷をEdgeへ集約
+### 3. Identity Layer
 
-アプリ本体の応答を安定化
+- ZITADEL Selfhosted（OIDC）
+- JWT発行とユーザー同定
+- 将来のIdP差し替えを想定した分離
 
-2️⃣ Application Layer
+### 4. Data Layer
 
-Application Service
+| コンポーネント | 用途 |
+| --- | --- |
+| PostgreSQL | トランザクションデータ |
+| Log Storage | アプリ・監査ログ保存 |
 
-Frontend Service (Vercel)
+## Environment Strategy
 
-API Service (Coolify)
+| 環境 | 用途 | デプロイ |
+| --- | --- | --- |
+| `dev` | 開発・検証 | 手動/ブランチ単位 |
+| `staging` | 結合確認 | main反映前 |
+| `prod` | 本番運用 | 承認後自動反映 |
 
-Discord Bot Service (Coolify)
+## Security Baseline
 
-責務：
+- 通信はHTTPS（TLS1.2+）を強制
+- APIはJWT検証を必須化
+- テナント境界（organization_id）を全クエリで担保
+- 監査対象操作を `audit_logs` に記録
 
-Frontend: 画面表示 / OIDCログイン導線
+## Scaling / Reliability
 
-API: タスク・承認・監査ログの中核処理
+- Frontend: CDNキャッシュで配信最適化
+- API: Coolify側で水平スケール可能な構成を維持
+- DB: read-heavy化したらRead Replicaを検討
+- 障害時: APIとBotはログを最優先で保全
 
-Bot: リマインド通知・Discord連携
+## Monitoring
 
-3️⃣ Identity Layer（分離推奨）
+- アプリログ: 失敗率・5xx率・処理時間
+- インフラ: CPU/Memory/再起動回数
+- アラート: 高優先度は即時通知（Discord/メール）
 
-Auth Middleware
+## Release Policy
 
-API側JWT検証 + RBAC/ABAC最終判定
-
-Identity Provider
-
-ZITADEL Selfhosted
-
-設計原則：
-
-原則
-
-理由
-
-アプリと分離
-
-ID基盤を交換可能にするため
-
-独立スケール
-
-ログイン集中時に追従するため
-
-DB直接アクセス禁止
-
-認証責務を分離するため
-
-4️⃣ Data Layer
-
-コンポーネント
-
-用途
-
-RDB
-
-タスク / 承認 / 組織 / 監査のトランザクション管理
-
-Log Storage
-
-アプリログ / アクセスログ / 監査ログの保存
-
-設計意図
-
-小規模運営に必要な構成へ絞り、運用負荷を下げる
-
-Edgeで先に配信と共通処理を行い、APIは業務処理に集中
-
-IdentityとApplicationの分離
-
-なぜ分離するか？
-
-OIDC基盤の独立運用を可能にする
-
-権限判定の責任境界を明確にする
-
-Containerを使う理由（Lambdaではなく）
-
-Lambdaの課題
-
-コールドスタートで通知遅延が発生しやすい
-
-長時間接続・常駐処理の実装が煩雑
-
-Containerの利点
-
-Bot常駐処理と相性がよい
-
-API/Botを同一運用で管理しやすい
-
-Discord通知責務を分離する理由
-
-通知失敗時の再試行をAPI本体から分離できる
-
-レート制限対応をBot側に閉じ込められる
-
-Cacheを利用する理由
-
-現フェーズでは専用Cacheは非採用
-
-必要時にセッション/レート制限用途で追加予定
-
-スケーリング戦略
-
-水平スケール
-
-レイヤー
-
-方法
-
-Edge
-
-Vercelの自動スケール
-
-App
-
-CoolifyでAPI/Botを個別スケール
-
-DB
-
-接続上限監視 + 必要時Read Replica
-
-Bot
-
-キュー長に応じたレプリカ追加
-
-局所アクセス対策
-
-ログイン時間帯のピークを監視
-
-Connection Pool管理
-
-通知再試行のバックオフ制御
+1. `doc/` で設計変更を先に確定
+2. 実装PRでテストとドキュメントを同時更新
+3. `staging` で確認後に `prod` へ反映

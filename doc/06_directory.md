@@ -1,123 +1,85 @@
-📁 ディレクトリ構成図
+# 📁 ディレクトリ構成図
 
-0️⃣ 設計前提
+## 0. 設計前提
 
-項目
+| 項目 | 内容 |
+| --- | --- |
+| リポジトリ構成 | Polyrepo |
+| アーキテクチャ | Clean Architecture（API） + Feature-based（Frontend） |
+| デプロイ単位 | 3サービス（Frontend / API / Discord Bot） |
+| 言語 | TypeScript（Frontend） / Go（API・Bot） |
+| MVP方針 | P0に必要なディレクトリのみ作成 |
 
-内容
+## 1. 全体構成
 
-リポジトリ構成
-
-Polyrepo
-
-アーキテクチャ
-
-Clean Architecture
-
-デプロイ単位
-
-3サービス（Frontend / API / Discord Bot）
-
-言語
-
-TypeScript（Frontend） / Go（API・Bot）
-
-MVP方針
-
-P0に必要なディレクトリのみ
-
-1️⃣ 全体構成（Monorepo想定）
-
-root/
+```text
+ashiato/
 ├── frontend/          # Webアプリ（Vercel）
 ├── api/               # APIサーバー（Coolify）
 ├── bot/               # Discord bot（Coolify）
 ├── doc/               # 設計書
 └── README.md
+```
 
-2️⃣ フロントエンド構成テンプレ
+## 2. フロントエンド構成（推奨）
 
+```text
 frontend/
 ├── src/
 │   ├── app/           # ルーティング層
 │   ├── features/      # 機能単位モジュール
 │   ├── components/    # 共通UI
-│   ├── hooks/
+│   ├── hooks/         # 共通hooks
 │   ├── lib/           # APIクライアント
 │   ├── stores/        # Zustand
-│   └── types/
+│   └── types/         # 型定義
 ├── public/
 └── tests/
+```
 
-Featureベース構成（推奨）
+### Featureベース例
 
+```text
 features/
 ├── auth/
-│   ├── components/
-│   ├── api.ts
-│   ├── hooks.ts
-│   └── types.ts
 ├── tasks/
-│   ├── components/
-│   ├── api.ts
-│   ├── hooks.ts
-│   └── types.ts
 ├── meeting/
-│   ├── components/
-│   ├── api.ts
-│   ├── hooks.ts
-│   └── types.ts
 └── announcement/
-    ├── components/
-    ├── api.ts
-    ├── hooks.ts
-    └── types.ts
+```
 
-3️⃣ バックエンド構成テンプレ（Clean Architecture）
+## 3. API構成（Clean Architecture）
 
+```text
 api/
 ├── cmd/                # エントリポイント
 ├── internal/
 │   ├── domain/         # エンティティ・ビジネスルール
-│   ├── usecase/        # アプリケーションロジック
-│   ├── repository/     # sqlc + pgx
-│   ├── handler/        # Echo HTTP層
+│   ├── usecase/        # ユースケース
+│   ├── repository/     # DB抽象
+│   ├── handler/        # HTTP層
 │   ├── middleware/     # 認証・認可
-│   └── config/
-├── migrations/
+│   └── config/         # 設定
+├── migrations/         # DBマイグレーション
 └── tests/
+```
 
-4️⃣ DDDベース構成テンプレ
+## 4. Bot構成（推奨）
 
-src/
-├── modules/
-│   ├── task/
-│   │   ├── domain/
-│   │   ├── application/
-│   │   ├── infrastructure/
-│   │   └── presentation/
-│   ├── approval/
-│   ├── meeting/
-│   └── auth/
+```text
+bot/
+├── src/
+│   ├── commands/       # Discordコマンド
+│   ├── jobs/           # 定期通知ジョブ
+│   ├── services/       # API連携ロジック
+│   ├── templates/      # 投稿テンプレート
+│   └── config/         # 設定
+├── scripts/
+└── tests/
+```
 
-5️⃣ マイクロサービス構成
+## 5. ドキュメント構成
 
-services/
-├── frontend-service/
-├── api-service/
-└── discord-bot-service/
-
-6️⃣ インフラ構成
-
-infra/
-├── vercel/            # FE設定
-├── coolify/           # API/Bot設定
-└── ci/                # GitHub Actions等
-
-※ IaC（Terraform）は現フェーズ非採用。Vercel/Coolifyの設定中心で運用。
-
-7️⃣ ドキュメント構成
-
+```text
 doc/
 ├── 00designdoc_template.md
 ├── 01_feature-list.md
@@ -129,43 +91,16 @@ doc/
 ├── 07_infrastructure.md
 ├── 08_logging.md
 └── 09_schedule_and_issues.md
+```
 
-8️⃣ テスト構成テンプレ
+## 6. 命名ルール
 
-tests/
-├── unit/
-├── integration/
-├── e2e/
-└── fixtures/
+- ドキュメント: `NN_topic.md`（2桁連番）
+- Frontend: `kebab-case` ファイル名、Reactコンポーネントは `PascalCase`
+- Go: パッケージは `lowercase`、ファイルは `snake_case.go`
 
-9️⃣ ベクトルDB / AI機能がある場合
+## 7. 追加チェックリスト
 
-packages/
-├── embeddings/
-│   ├── generator.ts
-│   ├── repository.ts
-│   └── vector-client.ts
-├── rag/
-│   ├── retriever.ts
-│   └── prompt-builder.ts
-
-※ 現行スコープでは非採用（将来検討）。
-
-🔟 状態管理分離パターン（FE）
-
-stores/
-├── auth.store.ts
-├── tasks.store.ts
-├── meeting.store.ts
-└── ui.store.ts
-
-11️⃣ API設計分離パターン
-
-api/
-├── client.ts
-├── endpoints/
-│   ├── auth.ts
-│   ├── tasks.ts
-│   ├── approvals.ts
-│   ├── meeting.ts
-│   └── announcements.ts
+- 追加したディレクトリの責務をREADMEに追記したか
+- 設計変更時に `doc/` の関連ファイルを更新したか
+- テスト配置先（`tests/`）を先に決めてから実装したか

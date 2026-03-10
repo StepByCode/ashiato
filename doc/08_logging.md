@@ -1,348 +1,126 @@
-📘 ログ設計テンプレート
+# 📘 ログ設計
 
-0️⃣ 設計前提
+## 0. 設計前提
 
-項目
+| 項目 | 内容 |
+| --- | --- |
+| 対象システム | Frontend / API / Discord Bot |
+| ログ方式 | 構造化ログ（JSON） |
+| 集約方式 | Centralized Logging |
+| 保持期間 | 30日 / 90日 / 1年 |
+| 個人情報 | マスキング必須 |
 
-内容
+## 1. ログ分類
 
-対象システム
+| 種別 | 目的 | 出力対象 |
+| --- | --- | --- |
+| Application Log | 動作確認・デバッグ | 開発・運用 |
+| Access Log | リクエスト追跡 | 運用 |
+| Audit Log | セキュリティ監査 | セキュリティ |
+| Security Log | 異常検知 | 運用 |
+| Business Log | KPI分析 | 運営 |
+| Infrastructure Log | リソース監視 | SRE |
 
-Frontend / API / Discord Bot
+## 2. ログレベル定義
 
-ログ方式
+| レベル | 用途 |
+| --- | --- |
+| `DEBUG` | 詳細情報（本番では通常無効） |
+| `INFO` | 正常動作 |
+| `WARN` | 想定内の異常 |
+| `ERROR` | 処理失敗 |
+| `FATAL` | サービス停止級 |
 
-構造化ログ（JSON）必須
+## 3. 標準ログフォーマット
 
-集約方式
-
-Centralized Logging
-
-保持期間
-
-30日 / 90日 / 1年
-
-個人情報
-
-マスキング必須
-
-1️⃣ ログ分類
-
-種別
-
-目的
-
-出力対象
-
-Application Log
-
-動作確認・デバッグ
-
-開発・運用
-
-Access Log
-
-リクエスト追跡
-
-運用
-
-Audit Log
-
-セキュリティ監査
-
-セキュリティ
-
-Security Log
-
-異常検知
-
-運用
-
-Business Log
-
-KPI分析
-
-運営
-
-Infrastructure Log
-
-リソース監視
-
-SRE
-
-2️⃣ ログレベル定義
-
-レベル
-
-用途
-
-DEBUG
-
-詳細情報（本番無効可）
-
-INFO
-
-正常動作
-
-WARN
-
-想定内の異常
-
-ERROR
-
-処理失敗
-
-FATAL
-
-サービス停止級
-
-3️⃣ 構造化ログフォーマット（JSON標準）
-
+```json
 {
-  "timestamp": "2026-03-01T10:00:00Z",
+  "timestamp": "2026-03-10T10:00:00Z",
   "level": "INFO",
   "service": "api-service",
   "environment": "prod",
   "trace_id": "uuid",
   "user_id": "uuid",
-  "organization_id": "uuid",
+  "tenant_id": "uuid",
   "action": "task.update",
   "resource_type": "task",
   "resource_id": "uuid",
   "message": "Task updated successfully",
   "metadata": {}
 }
+```
 
-4️⃣ 必須フィールド
+## 4. 必須フィールド
 
-フィールド
+| フィールド | 理由 |
+| --- | --- |
+| `timestamp` | 時系列追跡 |
+| `level` | 重要度判定 |
+| `service` | サービス識別 |
+| `trace_id` | 分散トレーシング |
+| `action` | 操作識別 |
+| `tenant_id` | テナント境界追跡 |
 
-理由
+## 5. ログ例
 
-timestamp
+### 5.1 Access Log
 
-時系列追跡
-
-level
-
-重要度
-
-service
-
-サービス識別
-
-trace_id
-
-分散トレーシング
-
-user_id
-
-監査
-
-organization_id
-
-組織スコープ境界
-
-action
-
-操作識別
-
-5️⃣ Application Log設計
-
-目的
-
-デバッグ
-
-障害解析
-
-出力例
-
-{
-  "level": "ERROR",
-  "service": "api-service",
-  "trace_id": "abc-123",
-  "organization_id": "org-001",
-  "action": "approval.grant",
-  "message": "Approval insert failed",
-  "error_code": "DB_WRITE_FAILED"
-}
-
-6️⃣ Access Log設計
-
+```json
 {
   "timestamp": "...",
   "method": "POST",
   "path": "/api/tasks",
-  "status": 201,
-  "latency_ms": 110,
-  "ip": "xxx.xxx.xxx.xxx",
-  "user_agent": "...",
-  "trace_id": "..."
-}
-
-{
-  "timestamp": "...",
-  "method": "POST",
-  "path": "/api/approvals",
   "status": 200,
-  "latency_ms": 85,
+  "latency_ms": 120,
   "ip": "xxx.xxx.xxx.xxx",
   "user_agent": "...",
   "trace_id": "..."
 }
+```
 
-7️⃣ Audit Log設計（重要）
+### 5.2 Audit Log
 
-対象操作
-
-承認操作
-
-ロール変更
-
-データ削除
-
-Discord通知トリガー
-
-認証失敗
-
+```json
 {
   "timestamp": "...",
   "user_id": "uuid",
-  "organization_id": "uuid",
-  "action": "reminder.dispatch",
-  "resource_type": "task",
+  "action": "role.grant",
+  "resource_type": "user",
   "resource_id": "uuid",
-  "before": {"status": "in_progress"},
-  "after": {"status": "done"},
+  "before": {"role": "member"},
+  "after": {"role": "admin"},
   "result": "allow",
   "ip": "..."
 }
+```
 
-8️⃣ セキュリティログ
+## 6. マスキングポリシー
 
-イベント
+| 対象 | 方針 |
+| --- | --- |
+| パスワード | 出力禁止 |
+| アクセストークン | 先頭/末尾以外マスク |
+| メールアドレス | ハッシュ化または部分マスク |
+| IP | 監査要件に応じて匿名化 |
 
-記録
+## 7. 保持ポリシー
 
-ログイン失敗
+| 種類 | 保持期間 |
+| --- | --- |
+| Application | 30日 |
+| Access | 90日 |
+| Audit | 1年以上 |
+| Security | 1年以上 |
 
-必須
+## 8. 監視・アラート
 
-異常アクセス
+- `ERROR` 率が閾値超過でアラート
+- 5xx連続発生時に即時通知
+- 認証失敗の急増をSecurityイベントとして通知
 
-必須
+## 9. 実装チェックリスト
 
-レート制限発動
-
-推奨
-
-ABAC deny
-
-推奨
-
-9️⃣ 分散トレーシング設計
-
-flowchart LR
-    Client --> Frontend
-    Frontend --> API
-    API --> DB
-    API --> Bot
-
-trace_id必須
-
-全サービスで引き継ぐ
-
-HTTP Headerで伝播
-
-🔟 ログ保存構成
-
-flowchart LR
-    Frontend --> LogAgent
-    API --> LogAgent
-    Bot --> LogAgent
-    LogAgent --> LogCollector
-    LogCollector --> LogStorage
-    LogStorage --> Monitoring
-
-11️⃣ 保持ポリシー
-
-種類
-
-保持期間
-
-Application
-
-30日
-
-Access
-
-90日
-
-Audit
-
-1年以上
-
-Security
-
-1年以上
-
-12️⃣ マスキングポリシー
-
-対象
-
-方針
-
-パスワード
-
-絶対出力禁止
-
-トークン
-
-マスク
-
-メール
-
-ハッシュ化
-
-IP
-
-必要に応じ匿名化
-
-13️⃣ フェーズ導入
-
-Phase0:
-- Application Log
-- Access Log
-- 最低限のAudit Log（task.create / task.complete / approval.grant）
-
-Phase1:
-- 構造化ログ統一
-- Centralized Logging
-- role.change 監査ログ追加
-
-Phase2:
-- 分散トレーシング
-- reminder.dispatch の監査連携
-- セキュリティイベント自動検知
-
-Phase3:
-- SIEM連携（将来検討）
-- 異常検知AI（将来検討）
-
-14️⃣ コスト最適化
-
-方法
-
-説明
-
-DEBUG無効
-
-本番削減
-
-サンプリング
-
-高トラフィック対策
-
-ローテーション
-
-古いログ圧縮
+- 全サービスでJSONログを採用したか
+- `trace_id` をヘッダーで連携しているか
+- PIIマスキングが有効か
+- 監査対象操作を漏れなく記録しているか

@@ -1,33 +1,18 @@
-📁 ディレクトリ構成図
+# 📁 ディレクトリ構成図
 
-0️⃣ 設計前提
+## 0. 設計前提
 
-項目
+| 項目 | 内容 |
+| --- | --- |
+| リポジトリ構成 | Polyrepo |
+| アーキテクチャ | Clean Architecture |
+| デプロイ単位 | マイクロサービス |
+| 言語 | 任意（TypeScript / Go / Python など） |
+| MVP方針 | P0に必要なディレクトリのみ |
 
-内容
+## 1. 全体構成（Monorepo想定）
 
-リポジトリ構成 
-
-Polyrepo
-
-アーキテクチャ 
-
-Clean Architecture
-
-デプロイ単位  
-
-マイクロサービス
-
-言語      
-
-任意（TypeScript / Go / Python 等）     
-
-MVP方針   
-
-P0に必要なディレクトリのみ                     
-
-1️⃣ 全体構成（Monorepo想定）
-
+```text
 root/
 ├── apps/              # 実行可能アプリ
 │   ├── web/
@@ -42,9 +27,11 @@ root/
 ├── scripts/           # 補助スクリプト
 ├── docs/              # 設計書
 └── README.md
+```
 
-2️⃣ フロントエンド構成テンプレ
+## 2. フロントエンド構成テンプレ
 
+```text
 apps/web/
 ├── src/
 │   ├── app/           # ルーティング層
@@ -56,9 +43,11 @@ apps/web/
 │   └── types/
 ├── public/
 └── tests/
+```
 
-Featureベース構成（推奨）
+### Featureベース構成（推奨）
 
+```text
 features/
 ├── auth/
 │   ├── components/
@@ -70,9 +59,11 @@ features/
 │   ├── api.ts
 │   ├── hooks.ts
 │   └── types.ts
+```
 
-3️⃣ バックエンド構成テンプレ（Clean Architecture）
+## 3. バックエンド構成テンプレ（Clean Architecture）
 
+```text
 apps/api/
 ├── cmd/                # エントリポイント
 ├── internal/
@@ -84,9 +75,11 @@ apps/api/
 │   └── config/
 ├── migrations/
 └── tests/
+```
 
-4️⃣ DDDベース構成テンプレ
+## 4. DDDベース構成テンプレ
 
+```text
 src/
 ├── modules/
 │   ├── user/
@@ -96,17 +89,21 @@ src/
 │   │   └── presentation/
 │   ├── organization/
 │   └── core/
+```
 
-5️⃣ マイクロサービス構成
+## 5. マイクロサービス構成
 
+```text
 services/
 ├── auth-service/
 ├── core-service/
 ├── notification-service/
 └── gateway/
+```
 
-6️⃣ インフラ構成
+## 6. インフラ構成
 
+```text
 infra/
 ├── terraform/
 │   ├── modules/
@@ -116,9 +113,11 @@ infra/
 │       └── prod/
 ├── docker/
 └── ci/
+```
 
-7️⃣ ドキュメント構成
+## 7. ドキュメント構成
 
+```text
 docs/
 ├── 01_feature-list.md
 ├── 02_db-design.md
@@ -126,17 +125,21 @@ docs/
 ├── 04_permission-design.md
 ├── 05_api-spec.md
 └── 06_directory.md
+```
 
-8️⃣ テスト構成テンプレ
+## 8. テスト構成テンプレ
 
+```text
 tests/
 ├── unit/
 ├── integration/
 ├── e2e/
 └── fixtures/
+```
 
-9️⃣ ベクトルDB / AI機能がある場合
+## 9. ベクトルDB / AI機能がある場合
 
+```text
 packages/
 ├── embeddings/
 │   ├── generator.ts
@@ -145,19 +148,24 @@ packages/
 ├── rag/
 │   ├── retriever.ts
 │   └── prompt-builder.ts
+```
 
-🔟 状態管理分離パターン（FE）
+## 10. 状態管理分離パターン（FE）
 
+```text
 stores/
 ├── auth.store.ts
 ├── entity.store.ts
 └── ui.store.ts
+```
 
-11️⃣ API設計分離パターン
+## 11. API設計分離パターン
 
+```text
 api/
 ├── client.ts
 ├── endpoints/
 │   ├── auth.ts
 │   ├── entities.ts
 │   └── users.ts
+```

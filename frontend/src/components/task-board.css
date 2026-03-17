@@ -41,3 +41,42 @@
 .task-title {
   font-size: 3rem;
 }
+
+@media (max-width: 900px) {
+  .menu-btn {
+    position: relative;
+    z-index: 40;
+    transition: transform 0.5s ease;
+  }
+
+  .menu-btn.shifted {
+    transform: translateX(calc(-1 * min(78vw, 320px)));
+  }
+
+  .month-sidebar {
+    display: flex;
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: auto;
+    width: min(78vw, 320px);
+    height: 100vh;
+    z-index: 30;
+    justify-content: flex-start;
+    padding-top: 76px;
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.5s ease, opacity 0.5s ease;
+  }
+
+  .month-sidebar.open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .creator-toggle-row {
+    display: none;
+  }
+}

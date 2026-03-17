@@ -29,6 +29,7 @@ function makeTaskId() {
 export function TaskBoard() {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [isCreateOpen, setCreateOpen] = useState(false);
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newOwner, setNewOwner] = useState<Owner | "">("");
   const [pendingAction, setPendingAction] = useState<{
@@ -80,7 +81,7 @@ export function TaskBoard() {
 
   return (
     <div className="app">
-      <aside className="month-sidebar">
+      <aside className={`month-sidebar ${isMobileMenuOpen ? "open" : ""}`}>
         {(["2026.4月", "2026.3月", "2026.2月", "2026.1月"] as const).map((month) => (
           <button key={month} className={`month-btn ${month === "2026.2月" ? "active" : ""}`} type="button">
             {month}
@@ -91,7 +92,12 @@ export function TaskBoard() {
       <main className="main">
         <div className="mobile-top">
           <strong>Ashiato</strong>
-          <button className="menu-btn" type="button">
+          <button
+            className={`menu-btn ${isMobileMenuOpen ? "shifted" : ""}`}
+            type="button"
+            aria-expanded={isMobileMenuOpen}
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+          >
             メニュー
           </button>
         </div>

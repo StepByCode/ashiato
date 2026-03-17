@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import "./task-board.css";
 
 type Owner = "kido" | "kitahara" | "sogo" | "nakai";
 type TaskState = "in_progress" | "done" | "approved";
@@ -32,7 +33,8 @@ export function TaskBoard() {
   const [newOwner, setNewOwner] = useState<Owner | "">("");
   const [pendingAction, setPendingAction] = useState<{
     taskId: string;
-    type: "approve" | "mark_done";
+    
+    type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
 
   const handleCreateTask = (event: FormEvent) => {
@@ -95,8 +97,8 @@ export function TaskBoard() {
         </div>
 
         <header className="progress-header status-footer">
-          <div className="footer-line" />
           <div className="footer-steps">
+            <div className="footer-line" />
             <div className="step">定例</div>
             <div className="step active">作成</div>
             <div className="step">広報</div>
@@ -109,7 +111,9 @@ export function TaskBoard() {
             const isApproved = task.state === "approved";
             const isDoneLike = task.state !== "in_progress";
             const isApproveConfirmOpen = pendingAction?.taskId === task.id && pendingAction.type === "approve" && !isApproved;
-            const isDoneConfirmOpen = pendingAction?.taskId === task.id && pendingAction.type === "mark_done";
+            const isDoneConfirmOpen =
+              pendingAction?.taskId === task.id &&
+              (pendingAction.type === "mark_done" || pendingAction.type === "mark_in_progress");
             const cardStateClass = task.state === "in_progress" ? "in-progress" : "done";
             const jumpHref = toJumpHref(task.url);
 
@@ -161,22 +165,26 @@ export function TaskBoard() {
                         type="button"
                         onClick={() => {
                           if (isDoneLike) {
-                            setTaskState(task.id, "in_progress");
-                            setPendingAction(null);
+                            setPendingAction({ taskId: task.id, type: "mark_in_progress" });
                           } else {
                             setPendingAction({ taskId: task.id, type: "mark_done" });
                           }
                         }}
                       >
-                        {isDoneLike ? "in progress" : "Done"}
+                        {isDoneLike ? "Done" : "in progress"}
                       </button>
                       <div className={`approve-confirm ${isDoneConfirmOpen ? "show" : ""}`}>
-                        <span>Doneに変更しますか？</span>
+                        <span>
+                          {pendingAction?.type === "mark_in_progress" ? "in progressに変更しますか。" : "Doneに変更しますか？"}
+                        </span>
                         <button
                           className="confirm-btn"
                           type="button"
                           onClick={() => {
-                            setTaskState(task.id, "done");
+                            setTaskState(
+                              task.id,
+                              pendingAction?.type === "mark_in_progress" ? "in_progress" : "done"
+                            );
                             setPendingAction(null);
                           }}
                         >

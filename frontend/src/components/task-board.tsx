@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import "./task-board.css";
 
 type Owner = "kido" | "kitahara" | "sogo" | "nakai";
 type TaskState = "in_progress" | "done" | "approved";

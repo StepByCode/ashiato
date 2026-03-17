@@ -7,7 +7,7 @@
 
 :root {
   --font-main: "Inter", "Noto Sans JP", sans-serif;
-  --accent: oklch(0.97 0 0);
+  --accent: #df6900;
   --letter: #24353e;
   --letter-light: #24353e;
   --regular: #d9d9d9;
@@ -19,7 +19,7 @@
   --button-radius: 30px;
   --sidebar-width: 16.6667%;
   --shadow: 0 4px 10px rgba(36, 53, 62, 0.2);
-  --background: oklch(1 0 0);
+  --background: #fff6ef;
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -73,6 +73,7 @@ body {
   margin: 0;
   font-family: var(--font-main);
   color: var(--letter);
+  background: var(--background);
 }
 
 .app {
@@ -157,7 +158,7 @@ body {
 
 .task-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
 }
@@ -167,6 +168,8 @@ body {
   align-items: center;
   gap: 20px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .task-title {
@@ -174,11 +177,13 @@ body {
   font-size: clamp(2rem, 4vw, 4.2rem);
   line-height: 1;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .select-like {
   border: 1px solid color-mix(in srgb, var(--letter) 38%, transparent);
   min-width: 180px;
+  max-width: 100%;
   padding: 8px 12px;
   font-weight: 700;
   font-size: 2rem;
@@ -408,15 +413,28 @@ body {
 }
 
 .footer-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
   border-top: 5px solid var(--accent);
+  transform: translateY(-50%);
+  z-index: 0;
 }
 
 .footer-steps {
+  position: relative;
+  isolation: isolate;
   margin-top: -34px;
   display: flex;
   justify-content: space-around;
   align-items: center;
   padding-top: 10px;
+}
+
+.step {
+  position: relative;
+  z-index: 1;
 }
 
 .footer-status {
@@ -495,6 +513,13 @@ body {
   .creator-form {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .task-status,
+  .action-btn,
+  .select-like {
+    width: 100%;
+    min-width: 0;
   }
 
   .creator-box {

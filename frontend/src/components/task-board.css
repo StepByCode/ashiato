@@ -1,0 +1,52 @@
+
+/* 内部の線を絶対配置にしたかった */
+.footer-steps {
+  position: relative;
+}
+
+
+.footer-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 5px solid var(--accent);
+  transform: translateY(-50%);
+  z-index: -1;
+}
+
+/* タスクカード左側のレイアウトをそろえる */
+.task-left {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  position: relative;
+}
+
+/* 担当者選択部分を左から250pxの位置に配置 */
+.select-like {
+  position: absolute;
+  left: 250px;
+}
+
+/* 完了済みタスクカードの背景色追加 */
+.task-card.done {
+  background: var(--success);
+}
+
+/* アクションボタンの文字サイズと太さばらばらだったのでそろえる */
+.action-btn {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+/* カーソル表示する */
+.action-btn, .confirm-btn, .plus-btn, .create-btn, .url-jump {
+  cursor: pointer;
+}
+
+/* タスクタイトルの文字サイズをそろえた*/
+.task-title {
+  font-size: 3rem;
+}

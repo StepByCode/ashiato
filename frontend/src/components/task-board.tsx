@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import "./task-board.css"; //新しく作ったCSSファイルをインポート
 
 type Owner = "kido" | "kitahara" | "sogo" | "nakai";
 type TaskState = "in_progress" | "done" | "approved";
@@ -32,7 +33,9 @@ export function TaskBoard() {
   const [newOwner, setNewOwner] = useState<Owner | "">("");
   const [pendingAction, setPendingAction] = useState<{
     taskId: string;
-    type: "approve" | "mark_done";
+    
+    // type: "approve" | "mark_done" ;を下のように変更
+    type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
 
   const handleCreateTask = (event: FormEvent) => {
@@ -95,8 +98,9 @@ export function TaskBoard() {
         </div>
 
         <header className="progress-header status-footer">
-          <div className="footer-line" />
+          {/* <div className="footer-line" /> をfooter-stepsの中に移動*/}
           <div className="footer-steps">
+            <div className="footer-line" />
             <div className="step">定例</div>
             <div className="step active">作成</div>
             <div className="step">広報</div>
@@ -168,7 +172,8 @@ export function TaskBoard() {
                           }
                         }}
                       >
-                        {isDoneLike ? "in progress" : "Done"}
+                        {/* Doneとin progressの動きが逆では？と思ったので変更*/}
+                        {isDoneLike ? "Done" : "in progress"}
                       </button>
                       <div className={`approve-confirm ${isDoneConfirmOpen ? "show" : ""}`}>
                         <span>Doneに変更しますか？</span>

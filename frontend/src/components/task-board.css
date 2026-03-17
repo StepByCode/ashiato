@@ -1,0 +1,43 @@
+.footer-steps {
+  position: relative;
+}
+
+.footer-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 5px solid var(--accent);
+  transform: translateY(-50%);
+  z-index: -1;
+}
+
+.task-left {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  position: relative;
+}
+
+.select-like {
+  position: absolute;
+  left: 250px;
+}
+
+.task-card.done {
+  background: var(--success);
+}
+
+.action-btn {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.action-btn, .confirm-btn, .plus-btn, .create-btn, .url-jump {
+  cursor: pointer;
+}
+
+.task-title {
+  font-size: 3rem;
+}

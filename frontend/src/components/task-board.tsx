@@ -175,7 +175,7 @@ export function TaskBoard() {
                       </button>
                       <div className={`approve-confirm ${isDoneConfirmOpen ? "show" : ""}`}>
                         <span>
-                          {pendingAction?.type === "mark_in_progress" ? "in progressにしますか。" : "Doneに変更しますか？"}
+                          {pendingAction?.type === "mark_in_progress" ? "in progressに変更しますか。" : "Doneに変更しますか？"}
                         </span>
                         <button
                           className="confirm-btn"

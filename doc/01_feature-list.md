@@ -17,7 +17,7 @@
 
 | # | 機能名 | 概要 | ユーザー価値 | 優先度 | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| A-1 | OIDC基盤 | ZITADEL | - | 🔴 P0 | - |
+| A-1 | OIDC基盤 | Pocket ID | - | 🔴 P0 | - |
 | A-2 | Discordアカウント | - | - | 🟢 P2 | - |
 
 ### カテゴリB: 進捗可視化（コア）
@@ -35,7 +35,7 @@
 | --- | --- | --- | --- | --- | --- |
 | C-1 | FEサービス | Vercel Pro | - | 🟡 P1 | - |
 | C-2 | BEサービス | オンプレサーバー（Coolify） | - | 🟡 P1 | - |
-| C-3 | OIDCサービス | ZITADEL Selfhosted | - | 🔴 P0 | - |
+| C-3 | OIDCサービス | Pocket ID Selfhosted | - | 🔴 P0 | - |
 | C-4 | Discord botサービス | Coolify | - | 🟢 P2 | - |
 
 ## 2. 優先順位の定義基準（共通ルール）

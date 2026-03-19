@@ -38,3 +38,18 @@ ashiato/
 ## ステータス
 
 現在は設計ドキュメントを起点に、各コンポーネント実装を進めるフェーズです。
+
+## AIエージェント環境
+
+このリポジトリでは `cc-sdd` を採用し、`Codex` `Gemini CLI` `Claude Code` 向けの作業環境を配置しています。
+
+- Codex: `AGENTS.md`、`.codex/prompts/`
+- Gemini CLI: `GEMINI.md`、`.gemini/commands/kiro/`
+- Claude Code: `CLAUDE.md`、`.claude/commands/kiro/`
+- 共通: `.kiro/settings/`、`.kiro/steering/`
+
+各CLIはリポジトリルートで起動し、`frontend/` `api/` `bot/` `doc/` を横断して影響範囲を確認する前提です。仕様化から始める場合は、最初に steering を読み込んでから spec を切ってください。
+
+- Codex: `/prompts:kiro-steering` → `/prompts:kiro-spec-init "やりたいこと"`
+- Gemini CLI: `/kiro:steering` → `/kiro:spec-init "やりたいこと"`
+- Claude Code: `/kiro:steering` → `/kiro:spec-init "やりたいこと"`

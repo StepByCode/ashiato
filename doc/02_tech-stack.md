@@ -36,7 +36,7 @@
 | フレームワーク | Echo | 高速・軽量・シンプル | 構造化 / 拡張性 | - |
 | API方式 | OpenAPI | 契約駆動開発 | 型安全 / 柔軟性 | - |
 | ORM / DBアクセス | sqlc + pgx | 型安全なクエリ生成 | 型統合 / マイグレーション管理 | - |
-| 認証 | OAuth2 + JWT | スケーラブル認証 | セキュリティ / OAuth対応 | - |
+| 認証 | Pocket ID (OIDC) + JWT | 軽量な self-hosted OIDC 基盤 | セキュリティ / OAuth対応 | 開発用 stub mode を併用 |
 | 非同期処理 | Pub/Sub | 再試行 / 耐障害性 | 可用性 / 分離設計 | - |
 
 ### ☁ インフラ / DevOps
@@ -55,7 +55,7 @@
 
 | 項目 | 方針 | 評価観点 |
 | --- | --- | --- |
-| 認証方式 | OAuth2 / OpenID Connect + JWT | 標準準拠 / 拡張性 |
+| 認証方式 | Pocket ID(OIDC) + JWT | 標準準拠 / 拡張性 |
 | 認可 | RBAC（将来的にABAC拡張可能設計） | RBAC / ABAC可否 |
 | 通信 | HTTPS強制（TLS1.2+） | TLS強制 / 証明書管理 |
 | データ保護 | 保存時暗号化（Cloud KMS） + マスキング | 暗号化 / マスキング |

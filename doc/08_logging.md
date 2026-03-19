@@ -1,126 +1,147 @@
-# 📘 ログ設計
+# ログ設計
 
 ## 0. 設計前提
 
 | 項目 | 内容 |
 | --- | --- |
 | 対象システム | Frontend / API / Discord Bot |
-| ログ方式 | 構造化ログ（JSON） |
+| ログ方式 | JSON 構造化ログ |
 | 集約方式 | Centralized Logging |
-| 保持期間 | 30日 / 90日 / 1年 |
-| 個人情報 | マスキング必須 |
+| 監査対象 | task / meeting / announcement の write 操作 |
+| 個人情報 | 必要最小限。token は出力禁止 |
 
 ## 1. ログ分類
 
-| 種別 | 目的 | 出力対象 |
-| --- | --- | --- |
-| Application Log | 動作確認・デバッグ | 開発・運用 |
-| Access Log | リクエスト追跡 | 運用 |
-| Audit Log | セキュリティ監査 | セキュリティ |
-| Security Log | 異常検知 | 運用 |
-| Business Log | KPI分析 | 運営 |
-| Infrastructure Log | リソース監視 | SRE |
-
-## 2. ログレベル定義
-
-| レベル | 用途 |
+| 種別 | 用途 |
 | --- | --- |
-| `DEBUG` | 詳細情報（本番では通常無効） |
-| `INFO` | 正常動作 |
-| `WARN` | 想定内の異常 |
-| `ERROR` | 処理失敗 |
-| `FATAL` | サービス停止級 |
+| Access Log | リクエスト追跡 |
+| Application Log | 動作確認・障害解析 |
+| Audit Log | セキュリティ監査・業務追跡 |
+| Security Log | 認証失敗・異常検知 |
 
-## 3. 標準ログフォーマット
+## 2. 標準フィールド
 
 ```json
 {
-  "timestamp": "2026-03-10T10:00:00Z",
+  "timestamp": "2026-03-19T10:00:00Z",
   "level": "INFO",
-  "service": "api-service",
-  "environment": "prod",
+  "service": "api",
   "trace_id": "uuid",
   "user_id": "uuid",
   "tenant_id": "uuid",
   "action": "task.update",
   "resource_type": "task",
   "resource_id": "uuid",
-  "message": "Task updated successfully",
-  "metadata": {}
+  "message": "request completed"
 }
 ```
 
-## 4. 必須フィールド
+必須項目:
 
-| フィールド | 理由 |
+| フィールド | 説明 |
 | --- | --- |
 | `timestamp` | 時系列追跡 |
-| `level` | 重要度判定 |
+| `level` | 重要度 |
 | `service` | サービス識別 |
-| `trace_id` | 分散トレーシング |
-| `action` | 操作識別 |
-| `tenant_id` | テナント境界追跡 |
+| `trace_id` | 追跡 ID |
+| `tenant_id` | 組織境界 |
 
-## 5. ログ例
+## 3. Access Log
 
-### 5.1 Access Log
+API では全リクエストで以下を出力する。
 
 ```json
 {
   "timestamp": "...",
+  "level": "INFO",
+  "service": "api",
+  "trace_id": "uuid",
   "method": "POST",
-  "path": "/api/tasks",
-  "status": 200,
-  "latency_ms": 120,
-  "ip": "xxx.xxx.xxx.xxx",
-  "user_agent": "...",
-  "trace_id": "..."
+  "path": "/api/v1/tasks",
+  "status": 201,
+  "latency_ms": 42,
+  "ip": "127.0.0.1",
+  "user_agent": "..."
 }
 ```
 
-### 5.2 Audit Log
+## 4. Audit Log
+
+### 4.1 スキーマ
+
+| フィールド | 内容 |
+| --- | --- |
+| `organization_id` | 組織 ID |
+| `actor_user_id` | user actor の場合のみ設定 |
+| `actor_type` | `user` または `service` |
+| `actor_label` | service 名など |
+| `action` | `task.create` など |
+| `resource_type` | `task` `meeting` `announcement` |
+| `resource_id` | リソース ID |
+| `before_state` | 変更前 JSON |
+| `after_state` | 変更後 JSON |
+| `result` | `success` |
+| `ip` | 実行元 IP |
+
+### 4.2 user actor 例
 
 ```json
 {
-  "timestamp": "...",
-  "user_id": "uuid",
-  "action": "role.grant",
-  "resource_type": "user",
+  "actor_type": "user",
+  "actor_user_id": "uuid",
+  "action": "task.approve",
+  "resource_type": "task",
   "resource_id": "uuid",
-  "before": {"role": "member"},
-  "after": {"role": "admin"},
-  "result": "allow",
-  "ip": "..."
+  "result": "success"
 }
 ```
 
-## 6. マスキングポリシー
+### 4.3 service actor 例
+
+```json
+{
+  "actor_type": "service",
+  "actor_label": "discord-bot",
+  "action": "announcement.publish_complete",
+  "resource_type": "announcement",
+  "resource_id": "uuid",
+  "result": "success"
+}
+```
+
+## 5. 監査対象操作
+
+- `task.create`
+- `task.update`
+- `task.delete`
+- `task.approve`
+- `meeting.upsert`
+- `announcement.upsert`
+- `announcement.publish_request`
+- `announcement.publish_complete`
+- `announcement.publish_fail`
+
+## 6. セキュリティログ
+
+- Bearer token 未設定
+- JWT 検証失敗
+- `X-Bot-Token` 不一致
+- tenant mismatch
+
+## 7. マスキング
 
 | 対象 | 方針 |
 | --- | --- |
-| パスワード | 出力禁止 |
-| アクセストークン | 先頭/末尾以外マスク |
-| メールアドレス | ハッシュ化または部分マスク |
-| IP | 監査要件に応じて匿名化 |
+| Bearer token | 出力禁止 |
+| Bot token | 出力禁止 |
+| email | Access/Application log では不要時は出さない |
+| IP | 監査要件に応じて保持 |
 
-## 7. 保持ポリシー
+## 8. 保持ポリシー
 
 | 種類 | 保持期間 |
 | --- | --- |
-| Application | 30日 |
 | Access | 90日 |
+| Application | 30日 |
 | Audit | 1年以上 |
 | Security | 1年以上 |
-
-## 8. 監視・アラート
-
-- `ERROR` 率が閾値超過でアラート
-- 5xx連続発生時に即時通知
-- 認証失敗の急増をSecurityイベントとして通知
-
-## 9. 実装チェックリスト
-
-- 全サービスでJSONログを採用したか
-- `trace_id` をヘッダーで連携しているか
-- PIIマスキングが有効か
-- 監査対象操作を漏れなく記録しているか

@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Clock3, ExternalLink, Link2 } from "lucide-react";
+import { Popover } from "@base-ui/react/popover";
+import { CalendarDays, ChevronDown, Clock3, ExternalLink, Link2 } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -15,13 +17,23 @@ function getDefaultMeetingDateTime() {
   nextMeeting.setDate(nextMeeting.getDate() + 12);
   nextMeeting.setHours(20, 0, 0, 0);
 
-  const offset = nextMeeting.getTimezoneOffset() * 60_000;
-  return new Date(nextMeeting.getTime() - offset).toISOString().slice(0, 16);
+  return toLocalDateTimeValue(nextMeeting);
+}
+
+function toLocalDateTimeValue(date: Date) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function parseMeetingDateTime(value: string) {
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) return undefined;
+  return parsedDate;
 }
 
 function formatMeetingDateTime(value: string) {
-  const parsedDate = new Date(value);
-  if (Number.isNaN(parsedDate.getTime())) return "日時を設定してください";
+  const parsedDate = parseMeetingDateTime(value);
+  if (!parsedDate) return "日時を設定してください";
 
   return new Intl.DateTimeFormat("ja-JP", {
     month: "long",
@@ -38,10 +50,21 @@ function toJumpHref(url: string) {
   return `https://${url}`;
 }
 
+function formatTimeUnit(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+const hourOptions = Array.from({ length: 24 }, (_, index) => index);
+const minuteOptions = [0, 15, 30, 45];
+
 export function MeetingBoard() {
   const [meetingAt, setMeetingAt] = useState(getDefaultMeetingDateTime);
   const [meetUrl, setMeetUrl] = useState("https://meet.google.com/abc-defg-hij");
   const [now, setNow] = useState(Date.now());
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const defaultDate = parseMeetingDateTime(getDefaultMeetingDateTime());
+    return defaultDate ? new Date(defaultDate.getFullYear(), defaultDate.getMonth(), 1) : new Date();
+  });
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -51,9 +74,41 @@ export function MeetingBoard() {
     return () => window.clearInterval(timerId);
   }, []);
 
+  const selectedDate = parseMeetingDateTime(meetingAt);
+  const selectedHours = selectedDate?.getHours() ?? 20;
+  const selectedMinutes = selectedDate?.getMinutes() ?? 0;
+
+  const applyNextMeetingAt = (nextDate: Date) => {
+    nextDate.setSeconds(0, 0);
+    setMeetingAt(toLocalDateTimeValue(nextDate));
+    setCalendarMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+  };
+
+  const handleSelectDate = (nextDay?: Date) => {
+    if (!nextDay) return;
+
+    const baseDate = selectedDate ?? new Date();
+    const nextDate = new Date(nextDay);
+    nextDate.setHours(baseDate.getHours(), baseDate.getMinutes(), 0, 0);
+    applyNextMeetingAt(nextDate);
+  };
+
+  const handleTimeChange = (part: "hours" | "minutes", nextValue: number) => {
+    const baseDate = selectedDate ?? parseMeetingDateTime(getDefaultMeetingDateTime()) ?? new Date();
+    const nextDate = new Date(baseDate);
+
+    if (part === "hours") {
+      nextDate.setHours(nextValue);
+    } else {
+      nextDate.setMinutes(nextValue);
+    }
+
+    applyNextMeetingAt(nextDate);
+  };
+
   const countdown = useMemo(() => {
-    const targetTime = new Date(meetingAt).getTime();
-    if (Number.isNaN(targetTime)) {
+    const targetDate = parseMeetingDateTime(meetingAt);
+    if (!targetDate) {
       return {
         dayCount: "--",
         detail: "日時を設定するとカウントダウンが表示されます",
@@ -61,6 +116,7 @@ export function MeetingBoard() {
       };
     }
 
+    const targetTime = targetDate.getTime();
     const difference = targetTime - now;
     if (difference <= 0) {
       return {
@@ -101,13 +157,81 @@ export function MeetingBoard() {
                   <CalendarDays className="size-4 text-primary" />
                   定例日時
                 </label>
-                <Input
-                  id="meeting-datetime"
-                  className="h-12 rounded-2xl border-border/70 bg-background/85 px-4 shadow-sm"
-                  type="datetime-local"
-                  value={meetingAt}
-                  onChange={(event) => setMeetingAt(event.target.value)}
-                />
+                <Popover.Root>
+                  <Popover.Trigger
+                    id="meeting-datetime"
+                    className={cn(
+                      buttonVariants({ variant: "outline" }),
+                      "h-12 w-full justify-between rounded-2xl border-border/70 bg-background/85 px-4 text-left text-base font-medium text-foreground shadow-sm hover:bg-background/95"
+                    )}
+                  >
+                    <span className="truncate">{formatMeetingDateTime(meetingAt)}</span>
+                    <CalendarDays className="size-4 text-primary" />
+                  </Popover.Trigger>
+
+                  <Popover.Portal>
+                    <Popover.Positioner side="bottom" align="start" sideOffset={10} className="z-50">
+                      <Popover.Popup
+                        initialFocus={false}
+                        className="w-[min(92vw,360px)] rounded-[1.5rem] border border-border/70 bg-[var(--surface-popover)] p-4 shadow-xl shadow-black/10 backdrop-blur"
+                      >
+                        <div className="space-y-4">
+                          <Calendar
+                            mode="single"
+                            month={calendarMonth}
+                            onMonthChange={setCalendarMonth}
+                            selected={selectedDate}
+                            onSelect={handleSelectDate}
+                            className="rounded-[1.25rem] bg-background/85 p-3"
+                          />
+
+                          <div className="grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                              <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                                <Clock3 className="size-4 text-primary" />
+                                時
+                              </span>
+                              <div className="relative">
+                                <select
+                                  className="h-12 w-full appearance-none rounded-2xl border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
+                                  aria-label="定例の時間"
+                                  value={selectedHours}
+                                  onChange={(event) => handleTimeChange("hours", Number(event.target.value))}
+                                >
+                                  {hourOptions.map((hour) => (
+                                    <option key={hour} value={hour}>
+                                      {formatTimeUnit(hour)}
+                                    </option>
+                                  ))}
+                                </select>
+                                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <span className="text-sm font-semibold text-foreground">分</span>
+                              <div className="relative">
+                                <select
+                                  className="h-12 w-full appearance-none rounded-2xl border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
+                                  aria-label="定例の分"
+                                  value={selectedMinutes}
+                                  onChange={(event) => handleTimeChange("minutes", Number(event.target.value))}
+                                >
+                                  {minuteOptions.map((minute) => (
+                                    <option key={minute} value={minute}>
+                                      {formatTimeUnit(minute)}
+                                    </option>
+                                  ))}
+                                </select>
+                                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </Popover.Popup>
+                    </Popover.Positioner>
+                  </Popover.Portal>
+                </Popover.Root>
                 <p className="text-sm text-muted-foreground">{formatMeetingDateTime(meetingAt)}</p>
               </div>
 

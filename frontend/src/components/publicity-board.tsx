@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { CheckCheck, Megaphone, RotateCcw } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,17 +36,23 @@ const initialChannels: ChannelCard[] = [
 const channelStateMeta: Record<
   ChannelState,
   {
-    badgeClassName: string;
     cardClassName: string;
+    stateContainerClassName: string;
+    stateLabelClassName: string;
+    stateValueClassName: string;
   }
 > = {
   in_progress: {
-    badgeClassName: "border-border/70 bg-background/80 text-foreground",
     cardClassName: "border-border/70 bg-card/95",
+    stateContainerClassName: "border-border/70 bg-background/80",
+    stateLabelClassName: "text-muted-foreground",
+    stateValueClassName: "text-foreground",
   },
   done: {
-    badgeClassName: "border-emerald-300/60 bg-emerald-100 text-emerald-900",
     cardClassName: "border-emerald-300/60 bg-[var(--surface-success)]",
+    stateContainerClassName: "border-emerald-300/60 bg-emerald-100",
+    stateLabelClassName: "text-emerald-900/70",
+    stateValueClassName: "text-emerald-950",
   },
 };
 
@@ -125,26 +130,35 @@ export function PublicityBoard() {
                 key={channel.id}
                 className={cn("rounded-[1.75rem] border-2 shadow-sm transition-colors", meta.cardClassName)}
               >
-                <CardContent className="space-y-5 p-5 sm:p-6">
-                  <div className="flex items-start justify-between gap-3">
+                <CardContent className="p-5 sm:p-6">
+                  <div className="mb-[10px] flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="space-y-2">
                       <h4 className="text-2xl font-semibold tracking-tight">{channel.name}</h4>
                       <p className="text-sm text-muted-foreground">{channel.note}</p>
                     </div>
-                    <Badge variant="outline" className={cn("min-h-10 rounded-full px-4 text-sm font-semibold", meta.badgeClassName)}>
-                      {isDone ? "Done" : "in progress"}
-                    </Badge>
+
+                    <Button
+                      type="button"
+                      variant={isDone ? "secondary" : "default"}
+                      className="min-h-14 w-full rounded-[1.25rem] px-6 text-base font-semibold shadow-sm sm:w-auto sm:min-w-52"
+                      onClick={() => setPendingAction({ channelId: channel.id, targetState })}
+                    >
+                      {isDone ? <RotateCcw className="size-4" /> : <CheckCheck className="size-4" />}
+                      {isDone ? "in progressに戻す" : "Doneにする"}
+                    </Button>
                   </div>
 
-                  <Button
-                    type="button"
-                    variant={isDone ? "secondary" : "default"}
-                    className="min-h-12 w-full rounded-full px-5 text-base font-semibold shadow-sm"
-                    onClick={() => setPendingAction({ channelId: channel.id, targetState })}
+                  <div
+                    className={cn(
+                      "flex min-h-28 flex-col justify-center rounded-[1.5rem] border px-5 py-[5px] shadow-sm",
+                      isConfirmOpen ? "mb-[10px]" : "",
+                      meta.stateContainerClassName
+                    )}
                   >
-                    {isDone ? <RotateCcw className="size-4" /> : <CheckCheck className="size-4" />}
-                    {isDone ? "in progressに戻す" : "Doneにする"}
-                  </Button>
+                    <span className={cn("text-[1.75rem] font-semibold tracking-tight sm:text-[2.25rem]", meta.stateValueClassName)}>
+                      {isDone ? "Done" : "in progress"}
+                    </span>
+                  </div>
 
                   {isConfirmOpen ? (
                     <div className="grid w-full gap-2 rounded-[1.25rem] border border-border/70 bg-popover/95 p-3 text-sm font-medium shadow-sm">

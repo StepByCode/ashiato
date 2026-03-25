@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 type Owner = "kido" | "kitahara" | "sogo" | "nakai";
 type TaskState = "in_progress" | "done" | "approved";
@@ -14,11 +14,12 @@ type Task = {
 };
 
 const owners: Owner[] = ["kido", "kitahara", "sogo", "nakai"];
+const months = ["2026.4月", "2026.3月", "2026.2月", "2026.1月"] as const;
 
 const initialTasks: Task[] = [
   { id: "connpass", title: "connpass", owner: "kido", state: "in_progress", url: "" },
   { id: "figma", title: "Figma", owner: "kitahara", state: "in_progress", url: "" },
-  { id: "place", title: "Place", owner: "nakai", state: "done", url: "" },
+  { id: "place", title: "Place", owner: "nakai", state: "in_progress", url: "" },
 ];
 
 function makeTaskId() {
@@ -28,13 +29,18 @@ function makeTaskId() {
 export function TaskBoard() {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [isCreateOpen, setCreateOpen] = useState(false);
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<"light" | "dark">("light");
   const [newTitle, setNewTitle] = useState("");
   const [newOwner, setNewOwner] = useState<Owner | "">("");
   const [pendingAction, setPendingAction] = useState<{
     taskId: string;
-    
     type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", themeMode === "dark");
+  }, [themeMode]);
 
   const handleCreateTask = (event: FormEvent) => {
     event.preventDefault();
@@ -80,20 +86,82 @@ export function TaskBoard() {
   return (
     <div className="app">
       <aside className="month-sidebar">
-        {(["2026.4月", "2026.3月", "2026.2月", "2026.1月"] as const).map((month) => (
+        {months.map((month) => (
           <button key={month} className={`month-btn ${month === "2026.2月" ? "active" : ""}`} type="button">
             {month}
           </button>
         ))}
+
+        <div className="theme-toggle theme-toggle-sidebar" role="group" aria-label="テーマ切替">
+          <button
+            className={`theme-toggle-btn ${themeMode === "light" ? "active" : ""}`}
+            type="button"
+            onClick={() => setThemeMode("light")}
+          >
+            Light
+          </button>
+          <button
+            className={`theme-toggle-btn ${themeMode === "dark" ? "active" : ""}`}
+            type="button"
+            onClick={() => setThemeMode("dark")}
+          >
+            Dark
+          </button>
+        </div>
       </aside>
 
       <main className="main">
         <div className="mobile-top">
           <strong>Ashiato</strong>
-          <button className="menu-btn" type="button">
-            メニュー
+          <button
+            className={`menu-btn ${isMobileMenuOpen ? "open" : ""}`}
+            type="button"
+            aria-label="メニューを開く"
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-menu-panel"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+          >
+            ☰
           </button>
         </div>
+
+        <div
+          className={`mobile-menu-backdrop ${isMobileMenuOpen ? "show" : ""}`}
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden={!isMobileMenuOpen}
+        />
+        <nav id="mobile-menu-panel" className={`mobile-menu-panel ${isMobileMenuOpen ? "open" : ""}`} aria-hidden={!isMobileMenuOpen}>
+          <button className="mobile-menu-close" type="button" aria-label="メニューを閉じる" onClick={() => setMobileMenuOpen(false)}>
+            ✕
+          </button>
+          {months.map((month) => (
+            <button
+              key={`mobile-${month}`}
+              className={`month-btn ${month === "2026.2月" ? "active" : ""}`}
+              type="button"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              {month}
+            </button>
+          ))}
+
+          <div className="theme-toggle theme-toggle-mobile" role="group" aria-label="テーマ切替">
+            <button
+              className={`theme-toggle-btn ${themeMode === "light" ? "active" : ""}`}
+              type="button"
+              onClick={() => setThemeMode("light")}
+            >
+              Light
+            </button>
+            <button
+              className={`theme-toggle-btn ${themeMode === "dark" ? "active" : ""}`}
+              type="button"
+              onClick={() => setThemeMode("dark")}
+            >
+              Dark
+            </button>
+          </div>
+        </nav>
 
         <header className="progress-header status-footer">
           <div className="footer-steps">
@@ -110,9 +178,7 @@ export function TaskBoard() {
             const isApproved = task.state === "approved";
             const isDoneLike = task.state !== "in_progress";
             const isApproveConfirmOpen = pendingAction?.taskId === task.id && pendingAction.type === "approve" && !isApproved;
-            const isDoneConfirmOpen =
-              pendingAction?.taskId === task.id &&
-              (pendingAction.type === "mark_done" || pendingAction.type === "mark_in_progress");
+            const isDoneConfirmOpen = pendingAction?.taskId === task.id && (pendingAction.type === "mark_done" || pendingAction.type === "mark_in_progress");
             const cardStateClass = task.state === "in_progress" ? "in-progress" : "done";
             const jumpHref = toJumpHref(task.url);
 
@@ -122,7 +188,7 @@ export function TaskBoard() {
                   <div className="task-left">
                     <h2 className="task-title">{task.title}</h2>
                     <select
-                      className="select-like"
+                      className="select-like select-like-desktop"
                       aria-label={`${task.title}担当者`}
                       value={task.owner}
                       onChange={(e) => updateOwner(task.id, e.target.value as Owner)}
@@ -133,6 +199,9 @@ export function TaskBoard() {
                         </option>
                       ))}
                     </select>
+                    <span className="select-like-mobile-text" aria-hidden="true">
+                      {task.owner}
+                    </span>
                   </div>
 
                   {showApprove ? (
@@ -173,17 +242,16 @@ export function TaskBoard() {
                         {isDoneLike ? "Done" : "in progress"}
                       </button>
                       <div className={`approve-confirm ${isDoneConfirmOpen ? "show" : ""}`}>
-                        <span>
-                          {pendingAction?.type === "mark_in_progress" ? "in progressに変更しますか。" : "Doneに変更しますか？"}
-                        </span>
+                        <span>{pendingAction?.type === "mark_in_progress" ? "in progressに変更しますか？" : "Doneに変更しますか？"}</span>
                         <button
                           className="confirm-btn"
                           type="button"
                           onClick={() => {
-                            setTaskState(
-                              task.id,
-                              pendingAction?.type === "mark_in_progress" ? "in_progress" : "done"
-                            );
+                            if (pendingAction?.type === "mark_in_progress") {
+                              setTaskState(task.id, "in_progress");
+                            } else {
+                              setTaskState(task.id, "done");
+                            }
                             setPendingAction(null);
                           }}
                         >
@@ -265,6 +333,7 @@ export function TaskBoard() {
             </form>
           </section>
         </section>
+
       </main>
     </div>
   );

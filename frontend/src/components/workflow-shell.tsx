@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -22,10 +24,20 @@ export function WorkflowShell({
   activeStep: WorkflowStep;
   children: ReactNode;
 }) {
+  const [themeMode, setThemeMode] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    setThemeMode(document.documentElement.classList.contains("dark") ? "dark" : "light");
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", themeMode === "dark");
+  }, [themeMode]);
+
   return (
-    <div className="min-h-screen px-4 py-4 sm:px-6 sm:py-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:flex-row">
-        <aside className="hidden w-full max-w-64 shrink-0 rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-lg shadow-black/5 backdrop-blur lg:flex lg:flex-col">
+    <div className="min-h-screen px-4 py-4 sm:px-6 sm:py-6 lg:h-screen lg:overflow-hidden">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-full lg:flex-row">
+        <aside className="hidden w-full max-w-64 shrink-0 rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-lg shadow-black/5 backdrop-blur lg:sticky lg:top-0 lg:relative lg:flex lg:h-full lg:flex-col lg:overflow-hidden">
           <div className="space-y-1 px-2 py-2">
             <h1 className="text-2xl font-semibold tracking-tight">Ashiato</h1>
           </div>
@@ -46,9 +58,36 @@ export function WorkflowShell({
               </Badge>
             ))}
           </div>
+
+          <div className="absolute bottom-4 right-4 inline-grid grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-background/80 p-1 shadow-sm">
+            <button
+              type="button"
+              className={cn(
+                "h-10 min-w-20 rounded-xl px-3 text-sm font-semibold transition-colors",
+                themeMode === "light"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
+              )}
+              onClick={() => setThemeMode("light")}
+            >
+              Light
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "h-10 min-w-20 rounded-xl px-3 text-sm font-semibold transition-colors",
+                themeMode === "dark"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
+              )}
+              onClick={() => setThemeMode("dark")}
+            >
+              Dark
+            </button>
+          </div>
         </aside>
 
-        <main className="flex-1 rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-lg shadow-black/5 backdrop-blur sm:p-6 lg:p-8">
+        <main className="flex-1 rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-lg shadow-black/5 backdrop-blur sm:p-6 lg:h-full lg:overflow-y-auto lg:p-8">
           <div className="space-y-6">
             <header className="space-y-5">
               <div className="lg:hidden">

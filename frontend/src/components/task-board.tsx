@@ -300,7 +300,7 @@ export function TaskBoard() {
           );
         })}
 
-        <Card className="rounded-[1.75rem] border-border/70 bg-[var(--surface-panel)]">
+        <Card className="rounded-[1.75rem] border-border/70 bg-[var(--surface-panel)] max-[900px]:hidden">
           <CardContent className="p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-xl font-semibold tracking-tight">追加</h3>
@@ -308,7 +308,7 @@ export function TaskBoard() {
               <Button
                 type="button"
                 variant={isCreateOpen ? "secondary" : "default"}
-                className="min-h-12 rounded-full px-5 text-base font-semibold shadow-sm"
+                className="min-h-12 rounded-full px-5 text-base font-semibold shadow-sm max-[900px]:hidden"
                 aria-expanded={isCreateOpen}
                 aria-controls="create-form-box"
                 onClick={() => setCreateOpen((prev) => !prev)}

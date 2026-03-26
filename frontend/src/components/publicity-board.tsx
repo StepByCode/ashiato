@@ -65,6 +65,7 @@ export function PublicityBoard() {
   } | null>(null);
 
   const templateLength = template.length;
+  const isWorkflowComplete = channels.every((channel) => channel.state === "done");
 
   const updateChannelState = (id: ChannelId, state: ChannelState) => {
     setChannels((currentChannels) =>
@@ -81,7 +82,7 @@ export function PublicityBoard() {
   };
 
   return (
-    <WorkflowShell activeStep="広報">
+    <WorkflowShell activeStep="広報" isWorkflowComplete={isWorkflowComplete}>
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.9fr)]">
         <Card className="rounded-[1.75rem] border-border/70 bg-card/95 shadow-sm">
           <CardContent className="space-y-6 p-5 sm:p-6">

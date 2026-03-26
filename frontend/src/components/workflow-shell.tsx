@@ -148,21 +148,50 @@ export function WorkflowShell({
               </div>
 
               <div className="lg:hidden">
-                <div className="flex gap-3 overflow-x-auto pb-1">
-                  {months.map((month) => (
-                    <Badge
-                      key={month}
-                      variant="outline"
+                <div className="flex items-center justify-between gap-3 pb-1">
+                  <div className="flex min-w-0 gap-3 overflow-x-auto">
+                    {months.map((month) => (
+                      <Badge
+                        key={month}
+                        variant="outline"
+                        className={cn(
+                          "min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold shadow-sm",
+                          month === currentMonth
+                            ? "border-primary/30 bg-primary text-primary-foreground"
+                            : "border-border/70 bg-background/80 text-foreground"
+                        )}
+                      >
+                        {month}
+                      </Badge>
+                    ))}
+                  </div>
+
+                  <div className="inline-grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
+                    <button
+                      type="button"
                       className={cn(
-                        "min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold shadow-sm",
-                        month === currentMonth
-                          ? "border-primary/30 bg-primary text-primary-foreground"
-                          : "border-border/70 bg-background/80 text-foreground"
+                        "h-9 min-w-14 rounded-lg px-2 text-xs font-semibold transition-colors",
+                        themeMode === "light"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
                       )}
+                      onClick={() => setThemeMode("light")}
                     >
-                      {month}
-                    </Badge>
-                  ))}
+                      Light
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "h-9 min-w-14 rounded-lg px-2 text-xs font-semibold transition-colors",
+                        themeMode === "dark"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
+                      )}
+                      onClick={() => setThemeMode("dark")}
+                    >
+                      Dark
+                    </button>
+                  </div>
                 </div>
               </div>
 

@@ -92,7 +92,7 @@ export function WorkflowShell({
       <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-full lg:flex-row">
         <aside className="hidden w-full max-w-64 shrink-0 rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-lg shadow-black/5 backdrop-blur lg:sticky lg:top-0 lg:relative lg:flex lg:h-full lg:flex-col lg:overflow-hidden">
           <div className="space-y-1 px-2 py-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Ashiato</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-[var(--accent)]">Ashiato</h1>
           </div>
 
           <div className="mt-8 flex flex-1 flex-col justify-center gap-3">
@@ -103,7 +103,7 @@ export function WorkflowShell({
                 className={cn(
                   "min-h-12 rounded-full border px-4 py-3 text-base font-semibold shadow-sm",
                   month === currentMonth
-                    ? "border-primary/30 bg-primary text-primary-foreground"
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-primary-foreground"
                     : "border-border/70 bg-background/80 text-foreground"
                 )}
               >
@@ -118,7 +118,7 @@ export function WorkflowShell({
               className={cn(
                 "h-10 min-w-20 rounded-xl px-3 text-sm font-semibold transition-colors",
                 themeMode === "light"
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-[var(--accent)] text-primary-foreground"
                   : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
               )}
               onClick={() => setThemeMode("light")}
@@ -130,7 +130,7 @@ export function WorkflowShell({
               className={cn(
                 "h-10 min-w-20 rounded-xl px-3 text-sm font-semibold transition-colors",
                 themeMode === "dark"
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-[var(--accent)] text-primary-foreground"
                   : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
               )}
               onClick={() => setThemeMode("dark")}
@@ -157,7 +157,7 @@ export function WorkflowShell({
                         className={cn(
                           "min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold shadow-sm",
                           month === currentMonth
-                            ? "border-primary/30 bg-primary text-primary-foreground"
+                            ? "border-[var(--accent)] bg-[var(--accent)] text-primary-foreground"
                             : "border-border/70 bg-background/80 text-foreground"
                         )}
                       >
@@ -172,7 +172,7 @@ export function WorkflowShell({
                       className={cn(
                         "h-9 min-w-14 rounded-lg px-2 text-xs font-semibold transition-colors",
                         themeMode === "light"
-                          ? "bg-primary text-primary-foreground"
+                          ? "bg-[var(--accent)] text-primary-foreground"
                           : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
                       )}
                       onClick={() => setThemeMode("light")}
@@ -184,7 +184,7 @@ export function WorkflowShell({
                       className={cn(
                         "h-9 min-w-14 rounded-lg px-2 text-xs font-semibold transition-colors",
                         themeMode === "dark"
-                          ? "bg-primary text-primary-foreground"
+                          ? "bg-[var(--accent)] text-primary-foreground"
                           : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
                       )}
                       onClick={() => setThemeMode("dark")}
@@ -204,9 +204,9 @@ export function WorkflowShell({
                         showCompleteLabel ? "pointer-events-none opacity-0" : "opacity-100"
                       )}
                     >
-                      <div className="pointer-events-none absolute left-8 right-8 top-6 h-px bg-primary/30 sm:top-7" />
+                      <div className="pointer-events-none absolute left-8 right-8 top-6 h-px bg-[color:color-mix(in_srgb,var(--accent)_35%,transparent)] sm:top-7" />
                       <div
-                        className="pointer-events-none absolute left-8 top-[22px] h-2 rounded-full bg-zinc-700 transition-[width] duration-700 ease-in-out dark:bg-primary sm:top-[25px]"
+                        className="pointer-events-none absolute left-8 top-[22px] h-2 rounded-full bg-[var(--accent)] transition-[width] duration-700 ease-in-out sm:top-[25px]"
                         style={{ width: progressWidth }}
                       />
                       {workflowSteps.map((step) => {
@@ -228,10 +228,10 @@ export function WorkflowShell({
                                 "flex size-12 items-center justify-center rounded-full border-2 bg-background text-sm font-semibold shadow-sm sm:size-14",
                                 "transition-all duration-700 ease-out",
                                 isActive && !isWorkflowComplete
-                                  ? "border-primary bg-primary text-primary-foreground"
+                                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--primary-foreground)]"
                                   : isCompletedVisual
-                                    ? "border-zinc-700 text-foreground hover:-translate-y-0.5 hover:bg-background/95 dark:border-primary"
-                                    : "border-border/80 text-foreground hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background/95"
+                                    ? "border-[var(--accent)] text-[var(--accent)] hover:-translate-y-0.5 hover:bg-background/95"
+                                    : "border-[var(--accent)] text-[var(--accent)] hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[color:color-mix(in_srgb,var(--accent)_10%,transparent)]"
                               )}
                             >
                               {step.label}

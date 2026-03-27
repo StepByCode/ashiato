@@ -154,8 +154,8 @@ func listInvitesHandler(client *db.Client) echo.HandlerFunc {
 func sendInviteEmail(apiKey, fromEmail, toEmail, password string, logger *slog.Logger) {
 	htmlBody := fmt.Sprintf(`
 <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 2rem;">
-  <h2 style="color: #df6900;">Ashiato へようこそ</h2>
-  <p>StepByCode の運営ツール Ashiato に招待されました。</p>
+  <h2 style="color: #df6900;">Backstage へようこそ</h2>
+  <p>StepByCode の運営ツール Backstage に招待されました。</p>
   <p>以下の情報でログインしてください:</p>
   <div style="background: #f5f5f5; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
     <p style="margin: 0.25rem 0;"><strong>メールアドレス:</strong> %s</p>
@@ -167,7 +167,7 @@ func sendInviteEmail(apiKey, fromEmail, toEmail, password string, logger *slog.L
 	payload := map[string]interface{}{
 		"from":    fromEmail,
 		"to":      []string{toEmail},
-		"subject": "【Ashiato】招待のお知らせ",
+		"subject": "【Backstage】招待のお知らせ",
 		"html":    htmlBody,
 	}
 	body, _ := json.Marshal(payload)

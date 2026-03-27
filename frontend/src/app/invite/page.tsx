@@ -86,7 +86,7 @@ export default function InvitePage() {
       <div className="w-full max-w-lg rounded-[var(--card-radius)] bg-white p-8 shadow-lg dark:bg-card">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--accent)]">Ashiato</h1>
+            <h1 className="text-2xl font-bold text-[var(--accent)]">Backstage</h1>
             <p className="mt-1 text-sm text-muted-foreground">メンバー招待</p>
           </div>
           <button

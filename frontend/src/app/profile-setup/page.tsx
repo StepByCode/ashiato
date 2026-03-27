@@ -56,7 +56,7 @@ export default function ProfileSetupPage() {
     <div className="flex min-h-dvh items-center justify-center bg-[var(--background)] p-4">
       <div className="w-full max-w-md rounded-[var(--card-radius)] bg-white p-8 shadow-lg dark:bg-card">
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-[var(--accent)]">Ashiato</h1>
+          <h1 className="text-2xl font-bold text-[var(--accent)]">Backstage</h1>
           <p className="mt-1 text-sm text-muted-foreground">プロフィール登録</p>
           <p className="mt-3 text-sm text-muted-foreground">
             はじめまして！まずあなたの情報を登録してください。

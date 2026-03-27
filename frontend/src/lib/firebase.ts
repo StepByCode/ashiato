@@ -7,7 +7,15 @@ const firebaseConfig = {
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
 };
 
-export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey);
+export function getMissingFirebaseConfigKeys(): string[] {
+  const missing: string[] = [];
+  if (!firebaseConfig.apiKey) missing.push("NEXT_PUBLIC_FIREBASE_API_KEY");
+  if (!firebaseConfig.authDomain) missing.push("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN");
+  if (!firebaseConfig.projectId) missing.push("NEXT_PUBLIC_FIREBASE_PROJECT_ID");
+  return missing;
+}
+
+export const isFirebaseConfigured = getMissingFirebaseConfigKeys().length === 0;
 
 let _app: FirebaseApp | null = null;
 let _auth: Auth | null = null;

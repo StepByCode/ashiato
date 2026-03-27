@@ -137,7 +137,7 @@ export function WorkflowShell({
       <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-full lg:flex-row">
         <aside className="hidden w-full max-w-64 shrink-0 rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-lg shadow-black/5 backdrop-blur lg:sticky lg:top-0 lg:relative lg:flex lg:h-full lg:flex-col lg:overflow-hidden">
           <div className="space-y-1 px-2 py-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Ashiato</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Backstage</h1>
           </div>
 
           <div className="mt-8 flex flex-1 flex-col justify-center gap-3">
@@ -210,7 +210,7 @@ export function WorkflowShell({
           <div className="space-y-6">
             <header className="space-y-5">
               <div className="lg:hidden">
-                <h2 className="text-xl font-semibold tracking-tight">Ashiato</h2>
+                <h2 className="text-xl font-semibold tracking-tight">Backstage</h2>
               </div>
 
               <div className="lg:hidden">

@@ -65,6 +65,7 @@ export function TaskBoard() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
+  const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newAssigneeId, setNewAssigneeId] = useState("");
@@ -75,8 +76,11 @@ export function TaskBoard() {
   const urlTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchTasks = useCallback(async (year: number, month: number) => {
-    setLoadingTasks(true);
+  const fetchTasks = useCallback(async (year: number, month: number, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent && !hasLoadedTasks) {
+      setLoadingTasks(true);
+    }
     try {
       const res = await apiFetch(`/api/v1/tasks?year=${year}&month=${month}`, null);
       if (res.ok) {
@@ -90,13 +94,16 @@ export function TaskBoard() {
           url: t.url ?? "",
         }));
         setTasks(fetched);
+        setHasLoadedTasks(true);
       }
     } catch {
       // API unreachable - show empty state
     } finally {
-      setLoadingTasks(false);
+      if (!silent && !hasLoadedTasks) {
+        setLoadingTasks(false);
+      }
     }
-  }, []);
+  }, [hasLoadedTasks]);
 
   const fetchMembers = useCallback(async () => {
     try {
@@ -118,6 +125,8 @@ export function TaskBoard() {
   }, [getIdToken]);
 
   useEffect(() => {
+    setHasLoadedTasks(false);
+    setLoadingTasks(true);
     void fetchTasks(selectedPeriod.year, selectedPeriod.month);
   }, [fetchTasks, selectedPeriod.year, selectedPeriod.month]);
 
@@ -127,12 +136,12 @@ export function TaskBoard() {
 
   useEffect(() => {
     pollTimer.current = setInterval(() => {
-      void fetchTasks(selectedPeriod.year, selectedPeriod.month);
+      void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
     }, 5000);
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        void fetchTasks(selectedPeriod.year, selectedPeriod.month);
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
         void fetchMembers();
       }
     };
@@ -177,7 +186,7 @@ export function TaskBoard() {
         setNewTitle("");
         setNewAssigneeId("");
         setCreateOpen(false);
-        void fetchTasks(selectedPeriod.year, selectedPeriod.month);
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
       }
     } catch {
       // ignore network errors
@@ -246,7 +255,7 @@ export function TaskBoard() {
         setTasks((prev) =>
           prev.map((task) => (task.id === id ? { ...task, state: t.state as TaskState } : task))
         );
-        void fetchTasks(selectedPeriod.year, selectedPeriod.month);
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
       }
     } catch {
       // ignore network errors

@@ -17,6 +17,7 @@ type Config struct {
 	ResendAPIKey            string
 	InviteFromEmail         string
 	CronSecret              string
+	CORSAllowedOrigins      []string
 }
 
 func Load() (Config, error) {
@@ -31,6 +32,7 @@ func Load() (Config, error) {
 		ResendAPIKey:            strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 		InviteFromEmail:         defaultValue(strings.TrimSpace(os.Getenv("INVITE_FROM_EMAIL")), "no-reply@stepbycode.work"),
 		CronSecret:              strings.TrimSpace(os.Getenv("CRON_SECRET")),
+		CORSAllowedOrigins:      parseCSV(strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))),
 	}
 
 	if cfg.DefaultOrgName == "" {
@@ -55,6 +57,20 @@ func defaultValue(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func parseCSV(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var result []string
+	for _, part := range strings.Split(raw, ",") {
+		v := strings.TrimSpace(part)
+		if v != "" {
+			result = append(result, v)
+		}
+	}
+	return result
 }
 
 func parseOwnerEmails(raw string) map[string]struct{} {

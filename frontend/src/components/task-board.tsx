@@ -8,22 +8,34 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { usePeriod } from "@/lib/period-context";
 
 import { WorkflowShell } from "./workflow-shell";
 
-type Owner = "kido" | "kitahara" | "sogo" | "nakai";
 type TaskState = "in_progress" | "done" | "approved";
 
 type Task = {
   id: string;
   title: string;
-  owner: Owner;
+  assigneeId: string;
+  assigneeName: string;
   state: TaskState;
   url: string;
 };
 
-const owners: Owner[] = ["kido", "kitahara", "sogo", "nakai"];
+type Member = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+const fixedTasks = [
+  { title: "イベント名", assigneeRequired: false },
+  { title: "connpassURL", assigneeRequired: true },
+  { title: "Place", assigneeRequired: true },
+] as const;
+
 const taskStateLabels: Record<TaskState, string> = {
   in_progress: "in progress",
   done: "Done",
@@ -48,17 +60,20 @@ const stateMeta: Record<
 };
 
 export function TaskBoard() {
+  const { getIdToken } = useAuth();
   const { selectedPeriod } = usePeriod();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
-  const [newOwner, setNewOwner] = useState<Owner | "">("");
+  const [newAssigneeId, setNewAssigneeId] = useState("");
   const [pendingAction, setPendingAction] = useState<{
     taskId: string;
     type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
   const urlTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchTasks = useCallback(async (year: number, month: number) => {
     setLoadingTasks(true);
@@ -69,7 +84,8 @@ export function TaskBoard() {
         const fetched = (data.tasks ?? []).map((t: Record<string, string>) => ({
           id: t.id,
           title: t.title,
-          owner: t.owner as Owner,
+          assigneeId: t.assigneeId ?? "",
+          assigneeName: t.assigneeName ?? "",
           state: t.state as TaskState,
           url: t.url ?? "",
         }));
@@ -82,20 +98,64 @@ export function TaskBoard() {
     }
   }, []);
 
+  const fetchMembers = useCallback(async () => {
+    try {
+      const token = await getIdToken();
+      if (!token) return;
+      const res = await apiFetch("/api/v1/members", token);
+      if (!res.ok) return;
+      const data = await res.json();
+      setMembers(
+        (data.members ?? []).map((member: Record<string, string>) => ({
+          id: member.id,
+          name: member.name || member.email,
+          email: member.email,
+        }))
+      );
+    } catch {
+      // ignore
+    }
+  }, [getIdToken]);
+
   useEffect(() => {
-    fetchTasks(selectedPeriod.year, selectedPeriod.month);
+    void fetchTasks(selectedPeriod.year, selectedPeriod.month);
   }, [fetchTasks, selectedPeriod.year, selectedPeriod.month]);
+
+  useEffect(() => {
+    void fetchMembers();
+  }, [fetchMembers]);
+
+  useEffect(() => {
+    pollTimer.current = setInterval(() => {
+      void fetchTasks(selectedPeriod.year, selectedPeriod.month);
+    }, 5000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month);
+        void fetchMembers();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibility);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      if (pollTimer.current) clearInterval(pollTimer.current);
+      window.removeEventListener("focus", handleVisibility);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [fetchMembers, fetchTasks, selectedPeriod.month, selectedPeriod.year]);
 
   const handleCreateTask = async (event: FormEvent) => {
     event.preventDefault();
-    if (!newTitle.trim() || !newOwner) return;
+    if (!newTitle.trim() || !newAssigneeId) return;
 
     try {
       const res = await apiFetch("/api/v1/tasks", null, {
         method: "POST",
         body: JSON.stringify({
           title: newTitle.trim(),
-          owner: newOwner,
+          assigneeId: newAssigneeId,
           year: selectedPeriod.year,
           month: selectedPeriod.month,
         }),
@@ -105,24 +165,54 @@ export function TaskBoard() {
         const t = data.task;
         setTasks((prev) => [
           ...prev,
-          { id: t.id, title: t.title, owner: t.owner as Owner, state: t.state as TaskState, url: t.url ?? "" },
+          {
+            id: t.id,
+            title: t.title,
+            assigneeId: t.assigneeId ?? "",
+            assigneeName: t.assigneeName ?? "",
+            state: t.state as TaskState,
+            url: t.url ?? "",
+          },
         ]);
         setNewTitle("");
-        setNewOwner("");
+        setNewAssigneeId("");
         setCreateOpen(false);
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month);
       }
     } catch {
       // ignore network errors
     }
   };
 
-  const updateOwner = async (id: string, owner: Owner) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, owner } : task)));
+  const updateAssignee = async (id: string, assigneeId: string) => {
+    const member = members.find((entry) => entry.id === assigneeId);
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === id
+          ? { ...task, assigneeId, assigneeName: assigneeId ? (member?.name ?? member?.email ?? "") : "" }
+          : task
+      )
+    );
     try {
-      await apiFetch(`/api/v1/tasks/${id}/owner`, null, {
+      const res = await apiFetch(`/api/v1/tasks/${id}/assignee`, null, {
         method: "PATCH",
-        body: JSON.stringify({ owner }),
+        body: JSON.stringify({ assigneeId }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.task;
+        setTasks((prev) =>
+          prev.map((task) =>
+            task.id === id
+              ? {
+                  ...task,
+                  assigneeId: t.assigneeId ?? "",
+                  assigneeName: t.assigneeName ?? "",
+                }
+              : task
+          )
+        );
+      }
     } catch {
       // ignore network errors
     }
@@ -132,10 +222,15 @@ export function TaskBoard() {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url } : task)));
     if (urlTimers.current[id]) clearTimeout(urlTimers.current[id]);
     urlTimers.current[id] = setTimeout(async () => {
-      await apiFetch(`/api/v1/tasks/${id}/url`, null, {
+      const res = await apiFetch(`/api/v1/tasks/${id}/url`, null, {
         method: "PATCH",
         body: JSON.stringify({ url }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.task;
+        setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url: t.url ?? "" } : task)));
+      }
     }, 600);
   };
 
@@ -151,6 +246,7 @@ export function TaskBoard() {
         setTasks((prev) =>
           prev.map((task) => (task.id === id ? { ...task, state: t.state as TaskState } : task))
         );
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month);
       }
     } catch {
       // ignore network errors
@@ -185,7 +281,7 @@ export function TaskBoard() {
     <WorkflowShell activeStep="作成">
       <section className="grid gap-4">
         {tasks.map((task) => {
-          const showApprove = task.owner !== "nakai" && (task.state === "done" || task.state === "approved");
+          const showApprove = task.state === "done" || task.state === "approved";
           const isApproved = task.state === "approved";
           const isDoneLike = task.state !== "in_progress";
           const isApproveConfirmOpen =
@@ -202,6 +298,9 @@ export function TaskBoard() {
                   taskStateLabels[pendingAction?.type === "mark_in_progress" ? "in_progress" : "done"]
                 }）に変更しますか？`;
 
+          const fixedTask = fixedTasks.find((entry) => entry.title === task.title);
+          const allowEmptyAssignee = !fixedTask?.assigneeRequired;
+
           return (
             <Card
               key={task.id}
@@ -216,15 +315,16 @@ export function TaskBoard() {
                       </h3>
                       <div className="relative w-full sm:max-w-60">
                         <select
-                          id={`${task.id}-owner`}
+                          id={`${task.id}-assignee`}
                           className="h-12 w-full appearance-none rounded-full border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
                           aria-label={`${task.title}担当者`}
-                          value={task.owner}
-                          onChange={(e) => updateOwner(task.id, e.target.value as Owner)}
+                          value={task.assigneeId}
+                          onChange={(e) => updateAssignee(task.id, e.target.value)}
                         >
-                          {owners.map((owner) => (
-                            <option key={owner} value={owner}>
-                              {owner}
+                          {allowEmptyAssignee ? <option value="">担当者なし</option> : <option value="">担当者</option>}
+                          {members.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name || member.email}
                             </option>
                           ))}
                         </select>
@@ -275,7 +375,7 @@ export function TaskBoard() {
                           </div>
                         ) : null}
                       </>
-                    ) : task.owner === "nakai" ? (
+                    ) : (
                       <>
                         <Button
                           type="button"
@@ -321,13 +421,16 @@ export function TaskBoard() {
                           </div>
                         ) : null}
                       </>
-                    ) : (
-                      <div className="flex min-h-12 w-full items-center justify-center rounded-full border border-border/70 px-5 text-sm font-semibold">
-                        in progress
-                      </div>
                     )}
                   </div>
                 </div>
+
+                {fixedTask ? (
+                  <p className="text-xs text-muted-foreground">
+                    固定タスク
+                    {fixedTask.assigneeRequired ? " / 担当者必須" : " / 担当者任意"}
+                  </p>
+                ) : null}
 
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
                   <div>
@@ -408,13 +511,13 @@ export function TaskBoard() {
                         className="h-12 w-full appearance-none rounded-2xl border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
                         aria-label="新規作成の担当者"
                         required
-                        value={newOwner}
-                        onChange={(e) => setNewOwner(e.target.value as Owner | "")}
+                        value={newAssigneeId}
+                        onChange={(e) => setNewAssigneeId(e.target.value)}
                       >
                         <option value="">担当者</option>
-                        {owners.map((owner) => (
-                          <option key={owner} value={owner}>
-                            {owner}
+                        {members.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name || member.email}
                           </option>
                         ))}
                       </select>

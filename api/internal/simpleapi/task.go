@@ -18,19 +18,16 @@ import (
 
 // TaskResponse matches the spec in docs/backend-api-request.md §4.1.
 type TaskResponse struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Owner     string `json:"owner"`
-	State     string `json:"state"`
-	URL       string `json:"url"`
-	Year      int    `json:"year,omitempty"`
-	Month     int    `json:"month,omitempty"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
-}
-
-var validOwners = map[string]bool{
-	"kido": true, "kitahara": true, "sogo": true, "nakai": true,
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	AssigneeID   string `json:"assigneeId,omitempty"`
+	AssigneeName string `json:"assigneeName,omitempty"`
+	State        string `json:"state"`
+	URL          string `json:"url"`
+	Year         int    `json:"year,omitempty"`
+	Month        int    `json:"month,omitempty"`
+	CreatedAt    string `json:"createdAt"`
+	UpdatedAt    string `json:"updatedAt"`
 }
 
 var validStates = map[string]bool{
@@ -39,6 +36,16 @@ var validStates = map[string]bool{
 
 const tasksCollection = "simple_tasks"
 
+var requiredTasks = []struct {
+	Title              string
+	AssigneeRequired   bool
+	FixedWithoutAssign bool
+}{
+	{Title: "イベント名", AssigneeRequired: false, FixedWithoutAssign: true},
+	{Title: "connpassURL", AssigneeRequired: true},
+	{Title: "Place", AssigneeRequired: true},
+}
+
 func tasksCollectionForPeriod(year, month int) string {
 	if year == 0 || month == 0 {
 		return tasksCollection
@@ -46,11 +53,73 @@ func tasksCollectionForPeriod(year, month int) string {
 	return fmt.Sprintf("%s_%d_%02d", tasksCollection, year, month)
 }
 
+func requiredTaskID(title string) string {
+	return "required-" + strings.ToLower(strings.ReplaceAll(title, " ", "-"))
+}
+
+func taskAllowsEmptyAssignee(title string) bool {
+	for _, required := range requiredTasks {
+		if required.Title == title {
+			return !required.AssigneeRequired
+		}
+	}
+	return false
+}
+
+func lookupMemberName(ctx context.Context, client *db.Client, assigneeID string) string {
+	if assigneeID == "" {
+		return ""
+	}
+	var user struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}
+	if err := client.NewRef("users").Child(assigneeID).Get(ctx, &user); err != nil {
+		return ""
+	}
+	if user.Name != "" {
+		return user.Name
+	}
+	return user.Email
+}
+
+func ensureRequiredTasks(ctx context.Context, client *db.Client, year, month int) error {
+	collection := tasksCollectionForPeriod(year, month)
+	ref := client.NewRef(collection)
+	var all map[string]TaskResponse
+	if err := ref.Get(ctx, &all); err != nil && !strings.Contains(err.Error(), "unexpected end of JSON input") {
+		return err
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	for _, required := range requiredTasks {
+		id := requiredTaskID(required.Title)
+		if existing, ok := all[id]; ok && existing.ID != "" {
+			continue
+		}
+
+		task := TaskResponse{
+			ID:        id,
+			Title:     required.Title,
+			State:     "in_progress",
+			URL:       "",
+			Year:      year,
+			Month:     month,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := ref.Child(id).Set(ctx, task); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // RegisterTaskRoutes registers Task API endpoints on the given Echo group.
 func RegisterTaskRoutes(g *echo.Group, client *db.Client) {
 	g.GET("/tasks", getTasksHandler(client))
 	g.POST("/tasks", createTaskHandler(client))
-	g.PATCH("/tasks/:taskId/owner", patchTaskOwnerHandler(client))
+	g.PATCH("/tasks/:taskId/assignee", patchTaskAssigneeHandler(client))
 	g.PATCH("/tasks/:taskId/url", patchTaskURLHandler(client))
 	g.PATCH("/tasks/:taskId/state", patchTaskStateHandler(client))
 }
@@ -60,6 +129,12 @@ func getTasksHandler(client *db.Client) echo.HandlerFunc {
 		ctx := c.Request().Context()
 		year, month := parsePeriodParams(c)
 		collection := tasksCollectionForPeriod(year, month)
+
+		if year != 0 && month != 0 {
+			if err := ensureRequiredTasks(ctx, client, year, month); err != nil {
+				return internalErrorWithLog(c, "failed to ensure required tasks", err, "collection", collection, "year", year, "month", month)
+			}
+		}
 
 		ref := client.NewRef(collection)
 		var all map[string]TaskResponse
@@ -72,9 +147,17 @@ func getTasksHandler(client *db.Client) echo.HandlerFunc {
 
 		tasks := make([]TaskResponse, 0, len(all))
 		for _, t := range all {
+			if t.AssigneeID != "" && t.AssigneeName == "" {
+				t.AssigneeName = lookupMemberName(ctx, client, t.AssigneeID)
+			}
 			tasks = append(tasks, t)
 		}
 		sort.Slice(tasks, func(i, j int) bool {
+			leftRequired := strings.HasPrefix(tasks[i].ID, "required-")
+			rightRequired := strings.HasPrefix(tasks[j].ID, "required-")
+			if leftRequired != rightRequired {
+				return leftRequired
+			}
 			return tasks[i].CreatedAt < tasks[j].CreatedAt
 		})
 
@@ -84,10 +167,10 @@ func getTasksHandler(client *db.Client) echo.HandlerFunc {
 
 func createTaskHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
-		Title string `json:"title"`
-		Owner string `json:"owner"`
-		Year  int    `json:"year"`
-		Month int    `json:"month"`
+		Title      string `json:"title"`
+		AssigneeID string `json:"assigneeId"`
+		Year       int    `json:"year"`
+		Month      int    `json:"month"`
 	}
 
 	return func(c echo.Context) error {
@@ -100,23 +183,24 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 		if title == "" {
 			return validationError(c, "title", "is required")
 		}
-		if !validOwners[req.Owner] {
-			return validationError(c, "owner", "is required")
+		if req.AssigneeID == "" && !taskAllowsEmptyAssignee(title) {
+			return validationError(c, "assigneeId", "is required")
 		}
 
 		collection := tasksCollectionForPeriod(req.Year, req.Month)
 		id := "task-" + uuid.New().String()[:8]
 		now := time.Now().Format(time.RFC3339)
 		task := TaskResponse{
-			ID:        id,
-			Title:     title,
-			Owner:     req.Owner,
-			State:     "in_progress",
-			URL:       "",
-			Year:      req.Year,
-			Month:     req.Month,
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:           id,
+			Title:        title,
+			AssigneeID:   req.AssigneeID,
+			AssigneeName: lookupMemberName(c.Request().Context(), client, req.AssigneeID),
+			State:        "in_progress",
+			URL:          "",
+			Year:         req.Year,
+			Month:        req.Month,
+			CreatedAt:    now,
+			UpdatedAt:    now,
 		}
 
 		if err := client.NewRef(collection).Child(id).Set(c.Request().Context(), task); err != nil {
@@ -127,19 +211,25 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 	}
 }
 
-func patchTaskOwnerHandler(client *db.Client) echo.HandlerFunc {
+func patchTaskAssigneeHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
-		Owner string `json:"owner"`
+		AssigneeID string `json:"assigneeId"`
 	}
 	return func(c echo.Context) error {
+		taskID := c.Param("taskId")
 		var req request
 		if err := c.Bind(&req); err != nil {
 			return validationError(c, "body", "invalid JSON")
 		}
-		if !validOwners[req.Owner] {
-			return validationError(c, "owner", "is required")
+
+		task, _ := findTask(c.Request().Context(), client, taskID)
+		if task == nil {
+			return notFoundError(c, "task not found")
 		}
-		return updateTaskField(c, client, c.Param("taskId"), "owner", req.Owner)
+		if req.AssigneeID == "" && !taskAllowsEmptyAssignee(task.Title) {
+			return validationError(c, "assigneeId", "is required")
+		}
+		return updateTaskAssignee(c, client, taskID, req.AssigneeID)
 	}
 }
 
@@ -230,6 +320,32 @@ func updateTaskField(c echo.Context, client *db.Client, taskID, field, value str
 	var updated TaskResponse
 	if err := ref.Get(ctx, &updated); err != nil {
 		return internalErrorWithLog(c, "task fetch after field update failed", err, "task_id", taskID, "field", field)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})
+}
+
+func updateTaskAssignee(c echo.Context, client *db.Client, taskID, assigneeID string) error {
+	ctx := c.Request().Context()
+	now := time.Now().Format(time.RFC3339)
+
+	task, ref := findTask(ctx, client, taskID)
+	if task == nil {
+		return notFoundError(c, "task not found")
+	}
+
+	updates := map[string]interface{}{
+		"assigneeId":   assigneeID,
+		"assigneeName": lookupMemberName(ctx, client, assigneeID),
+		"updatedAt":    now,
+	}
+	if err := ref.Update(ctx, updates); err != nil {
+		return internalErrorWithLog(c, "task assignee update failed", err, "task_id", taskID)
+	}
+
+	var updated TaskResponse
+	if err := ref.Get(ctx, &updated); err != nil {
+		return internalErrorWithLog(c, "task fetch after assignee update failed", err, "task_id", taskID)
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})

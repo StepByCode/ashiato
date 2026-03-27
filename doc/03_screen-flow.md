@@ -146,4 +146,5 @@ flowchart TD
 - `/`
 - `/meeting`
 - `/task-create`
+- 作成画面では `イベント名` `connpassURL` `Place` を固定タスクとして保持する
 - `/publicity`

@@ -6,7 +6,7 @@
 | --- | --- |
 | 権限モデル | RBAC + 最小限の ABAC |
 | マルチテナント | DB は対応、MVP は単一 seed 組織 |
-| 認証方式 | Pocket ID(OIDC) / 開発用 stub JWT |
+| 認証方式 | Firebase Authentication (Email/Password) |
 | スコープ単位 | `organization_id` |
 | MVP 方針 | `OWNER / EDITOR / VIEWER` のみ実装 |
 
@@ -21,10 +21,10 @@
 
 ## 2. 認証
 
-- 公開 API は Bearer JWT を必須とする
-- `AUTH_MODE=oidc` では Pocket ID の discovery/JWKS で検証する
-- `AUTH_MODE=stub` では `DEV_JWT_SECRET` 署名 JWT を検証する
-- 認証後、`sub/email/name` を正規化して `users` を upsert し、seed 組織へ自動所属させる
+- 公開 API は Bearer JWT（Firebase ID トークン）を必須とする
+- Firebase Admin SDK でトークンを検証し、`uid/email/displayName` を取得する
+- 認証後、`uid/email/name` を正規化して `users` を upsert し、seed 組織へ自動所属させる
+- ユーザーは Firebase コンソールで事前作成し、Email/Password でログインする
 
 ## 3. ロール設計
 
@@ -98,7 +98,7 @@ else:
 ## 7. API レイヤー統合
 
 ```text
-1. JWT or bot token を検証
+1. Firebase ID トークン or bot token を検証
 2. user の場合は users / organization_members を同期
 3. organization_id 境界を強制
 4. role を判定

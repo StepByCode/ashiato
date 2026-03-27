@@ -30,7 +30,7 @@ flowchart LR
     end
 
     subgraph IDENTITY["Identity Layer"]
-        IDP["Pocket ID Selfhosted<br/>(OIDC)"]:::svc
+        IDP["Firebase Authentication<br/>(Email/Password)"]:::svc
     end
 
     subgraph DATA["Data Layer"]
@@ -43,7 +43,7 @@ flowchart LR
     USER --> CDN
     CDN --> EDGE_FUNC
     EDGE_FUNC --> FE
-    FE --> IDP
+    FE -->|Firebase SDK| IDP
     FE --> API
     API --> RDB
     API --> LOGS
@@ -99,9 +99,10 @@ flowchart LR
 
 ### 3. Identity Layer
 
-- Pocket ID Selfhosted（OIDC）
-- JWT発行とユーザー同定
-- 将来のIdP差し替えを想定した分離
+- Firebase Authentication（Email/Password）
+- Firebase コンソールでユーザーを事前作成
+- フロントエンドは Firebase JS SDK で認証し ID トークンを取得
+- API は Firebase Admin SDK でトークンを検証
 
 ### 4. Data Layer
 

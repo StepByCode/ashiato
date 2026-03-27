@@ -18,13 +18,19 @@ import (
 	"github.com/dokkiitech/ashiato/api/internal/repository"
 )
 
+// FirebaseUserCreator abstracts Firebase Auth user creation.
+type FirebaseUserCreator interface {
+	CreateFirebaseUser(ctx context.Context, email, password, displayName string) (uid string, err error)
+}
+
 type Service struct {
-	store       *repository.Store
-	webhook     *discord.WebhookClient
-	logger      *slog.Logger
-	defaultName string
-	defaultSlug string
-	ownerEmails map[string]struct{}
+	store        *repository.Store
+	webhook      *discord.WebhookClient
+	logger       *slog.Logger
+	defaultName  string
+	defaultSlug  string
+	ownerEmails  map[string]struct{}
+	userCreator  FirebaseUserCreator
 }
 
 type PutMeetingInput struct {
@@ -70,7 +76,7 @@ type PublishAnnouncementInput struct {
 	PublishChannel string
 }
 
-func NewService(store *repository.Store, webhook *discord.WebhookClient, logger *slog.Logger, cfg config.Config) *Service {
+func NewService(store *repository.Store, webhook *discord.WebhookClient, logger *slog.Logger, cfg config.Config, userCreator FirebaseUserCreator) *Service {
 	return &Service{
 		store:       store,
 		webhook:     webhook,
@@ -78,7 +84,67 @@ func NewService(store *repository.Store, webhook *discord.WebhookClient, logger 
 		defaultName: cfg.DefaultOrgName,
 		defaultSlug: cfg.DefaultOrgSlug,
 		ownerEmails: cfg.OwnerEmails,
+		userCreator: userCreator,
 	}
+}
+
+type CreateMemberInput struct {
+	Email       string
+	Password    string
+	DisplayName string
+}
+
+func (s *Service) CreateMember(ctx context.Context, actor domain.Actor, input CreateMemberInput) (domain.Member, error) {
+	if actor.Role != domain.RoleOwner {
+		return domain.Member{}, domain.NewAppError(domain.ErrorCodeForbidden, "only OWNER can create members", nil)
+	}
+
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if email == "" {
+		return domain.Member{}, domain.NewAppError(domain.ErrorCodeValidation, "email is required", nil)
+	}
+	if strings.TrimSpace(input.Password) == "" {
+		return domain.Member{}, domain.NewAppError(domain.ErrorCodeValidation, "password is required", nil)
+	}
+	displayName := strings.TrimSpace(input.DisplayName)
+	if displayName == "" {
+		displayName = email
+	}
+
+	uid, err := s.userCreator.CreateFirebaseUser(ctx, email, input.Password, displayName)
+	if err != nil {
+		return domain.Member{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to create firebase user: "+err.Error(), err)
+	}
+
+	principal := domain.Principal{
+		Subject: uid,
+		Email:   email,
+		Name:    displayName,
+	}
+	syncedActor, err := s.SyncPrincipal(ctx, principal)
+	if err != nil {
+		return domain.Member{}, err
+	}
+
+	role := domain.RoleEditor
+	if _, ok := s.ownerEmails[email]; ok {
+		role = domain.RoleOwner
+	}
+
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "member.create", "user", syncedActor.UserID, nil, map[string]string{
+		"email": email,
+		"name":  displayName,
+		"role":  role,
+	}); err != nil {
+		s.logger.Error("failed to write audit log for member creation", "error", err)
+	}
+
+	return domain.Member{
+		ID:    syncedActor.UserID,
+		Email: email,
+		Name:  displayName,
+		Role:  syncedActor.Role,
+	}, nil
 }
 
 func (s *Service) SyncPrincipal(ctx context.Context, principal domain.Principal) (domain.Actor, error) {
@@ -107,7 +173,7 @@ func (s *Service) SyncPrincipal(ctx context.Context, principal domain.Principal)
 		UserID:         userID,
 		OrganizationID: orgID,
 		Role:           member.Role,
-		Subject:        user.OIDCSubject,
+		Subject:        user.FirebaseUID,
 		Email:          user.Email,
 		Name:           user.Name,
 	}, nil

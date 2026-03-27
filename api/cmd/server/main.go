@@ -71,7 +71,8 @@ func main() {
 	store := repository.New(dbClient)
 	webhook := discord.NewWebhookClient(cfg.DiscordWebhookURL)
 	verifier := auth.NewFirebaseVerifier(authClient)
-	service := usecase.NewService(store, webhook, logger, cfg)
+	userCreator := auth.NewFirebaseUserCreator(authClient)
+	service := usecase.NewService(store, webhook, logger, cfg, userCreator)
 	authenticator := auth.NewAuthenticator(verifier, service)
 	server := handler.NewServer(service)
 
@@ -89,6 +90,10 @@ func main() {
 
 	strictHandler := oapi.NewStrictHandler(server, nil)
 	oapi.RegisterHandlers(e, strictHandler)
+
+	// Member management (requires authentication via middleware).
+	apiGroup := e.Group("/api/v1")
+	handler.RegisterMemberRoutes(apiGroup, service)
 
 	// Simple API endpoints (docs/backend-api-request.md) backed by Realtime Database.
 	simpleGroup := e.Group("/api/v1")

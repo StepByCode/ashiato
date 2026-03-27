@@ -7,11 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/firestore"
+	"firebase.google.com/go/v4/db"
 	"github.com/google/uuid"
-	"google.golang.org/api/iterator"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/dokkiitech/ashiato/api/internal/domain"
 )
@@ -19,67 +16,56 @@ import (
 // ErrNotFound is returned when a document is not found.
 var ErrNotFound = errors.New("document not found")
 
-// Store wraps a Firestore client and provides domain-specific data operations.
+// Store wraps a Realtime Database client and provides domain-specific data operations.
 type Store struct {
-	client *firestore.Client
+	client *db.Client
 }
 
-func New(client *firestore.Client) *Store {
+func New(client *db.Client) *Store {
 	return &Store{client: client}
-}
-
-func (s *Store) Close() error {
-	return s.client.Close()
 }
 
 // --- Organizations ---
 
 type OrganizationDoc struct {
-	Slug      string    `firestore:"slug"`
-	Name      string    `firestore:"name"`
-	CreatedAt time.Time `firestore:"created_at"`
-	UpdatedAt time.Time `firestore:"updated_at"`
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 func (s *Store) EnsureOrganization(ctx context.Context, slug, name string) (uuid.UUID, OrganizationDoc, error) {
-	col := s.client.Collection("organizations")
-	iter := col.Where("slug", "==", slug).Limit(1).Documents(ctx)
-	doc, err := iter.Next()
-	if err == nil {
-		var org OrganizationDoc
-		if err := doc.DataTo(&org); err != nil {
-			return uuid.Nil, OrganizationDoc{}, err
-		}
-		id, err := uuid.Parse(doc.Ref.ID)
-		if err != nil {
-			return uuid.Nil, OrganizationDoc{}, err
-		}
-		return id, org, nil
-	}
-	if !errors.Is(err, iterator.Done) {
+	ref := s.client.NewRef("organizations")
+	var all map[string]OrganizationDoc
+	if err := ref.Get(ctx, &all); err != nil {
 		return uuid.Nil, OrganizationDoc{}, err
+	}
+	for idStr, org := range all {
+		if org.Slug == slug {
+			id, err := uuid.Parse(idStr)
+			if err != nil {
+				return uuid.Nil, OrganizationDoc{}, err
+			}
+			return id, org, nil
+		}
 	}
 
 	id := uuid.New()
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format(time.RFC3339)
 	org := OrganizationDoc{Slug: slug, Name: name, CreatedAt: now, UpdatedAt: now}
-	if _, err := col.Doc(id.String()).Set(ctx, org); err != nil {
+	if err := ref.Child(id.String()).Set(ctx, org); err != nil {
 		return uuid.Nil, OrganizationDoc{}, err
 	}
 	return id, org, nil
 }
 
 func (s *Store) GetOrganizationByID(ctx context.Context, id uuid.UUID) (OrganizationDoc, error) {
-	doc, err := s.client.Collection("organizations").Doc(id.String()).Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return OrganizationDoc{}, ErrNotFound
-		}
+	var org OrganizationDoc
+	if err := s.client.NewRef("organizations").Child(id.String()).Get(ctx, &org); err != nil {
 		return OrganizationDoc{}, err
 	}
-	var org OrganizationDoc
-	if err := doc.DataTo(&org); err != nil {
-		return OrganizationDoc{}, err
+	if org.Slug == "" {
+		return OrganizationDoc{}, ErrNotFound
 	}
 	return org, nil
 }
@@ -87,42 +73,39 @@ func (s *Store) GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organiza
 // --- Users ---
 
 type UserDoc struct {
-	OIDCSubject string    `firestore:"oidc_subject"`
-	Email       string    `firestore:"email"`
-	Name        string    `firestore:"name"`
-	CreatedAt   time.Time `firestore:"created_at"`
-	UpdatedAt   time.Time `firestore:"updated_at"`
+	OIDCSubject string `json:"oidc_subject"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 func (s *Store) UpsertUser(ctx context.Context, subject, email, name string) (uuid.UUID, UserDoc, error) {
-	col := s.client.Collection("users")
-	iter := col.Where("oidc_subject", "==", subject).Limit(1).Documents(ctx)
-	doc, err := iter.Next()
-	if err == nil {
-		var user UserDoc
-		if err := doc.DataTo(&user); err != nil {
-			return uuid.Nil, UserDoc{}, err
-		}
-		user.Email = email
-		user.Name = name
-		user.UpdatedAt = time.Now().UTC()
-		if _, err := doc.Ref.Set(ctx, user); err != nil {
-			return uuid.Nil, UserDoc{}, err
-		}
-		id, err := uuid.Parse(doc.Ref.ID)
-		if err != nil {
-			return uuid.Nil, UserDoc{}, err
-		}
-		return id, user, nil
-	}
-	if !errors.Is(err, iterator.Done) {
+	ref := s.client.NewRef("users")
+	var all map[string]UserDoc
+	if err := ref.Get(ctx, &all); err != nil && err.Error() != "unexpected end of JSON input" {
 		return uuid.Nil, UserDoc{}, err
+	}
+	for idStr, user := range all {
+		if user.OIDCSubject == subject {
+			user.Email = email
+			user.Name = name
+			user.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			if err := ref.Child(idStr).Set(ctx, user); err != nil {
+				return uuid.Nil, UserDoc{}, err
+			}
+			id, err := uuid.Parse(idStr)
+			if err != nil {
+				return uuid.Nil, UserDoc{}, err
+			}
+			return id, user, nil
+		}
 	}
 
 	id := uuid.New()
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format(time.RFC3339)
 	user := UserDoc{OIDCSubject: subject, Email: email, Name: name, CreatedAt: now, UpdatedAt: now}
-	if _, err := col.Doc(id.String()).Set(ctx, user); err != nil {
+	if err := ref.Child(id.String()).Set(ctx, user); err != nil {
 		return uuid.Nil, UserDoc{}, err
 	}
 	return id, user, nil
@@ -131,29 +114,26 @@ func (s *Store) UpsertUser(ctx context.Context, subject, email, name string) (uu
 // --- Organization Members ---
 
 type MemberDoc struct {
-	OrganizationID string    `firestore:"organization_id"`
-	UserID         string    `firestore:"user_id"`
-	Role           string    `firestore:"role"`
-	CreatedAt      time.Time `firestore:"created_at"`
-	UpdatedAt      time.Time `firestore:"updated_at"`
+	OrganizationID string `json:"organization_id"`
+	UserID         string `json:"user_id"`
+	Role           string `json:"role"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 func (s *Store) EnsureOrganizationMembership(ctx context.Context, orgID, userID uuid.UUID, role string) (MemberDoc, error) {
-	col := s.client.Collection("organization_members")
-	iter := col.Where("organization_id", "==", orgID.String()).Where("user_id", "==", userID.String()).Limit(1).Documents(ctx)
-	doc, err := iter.Next()
-	if err == nil {
-		var member MemberDoc
-		if err := doc.DataTo(&member); err != nil {
-			return MemberDoc{}, err
-		}
-		return member, nil
-	}
-	if !errors.Is(err, iterator.Done) {
+	ref := s.client.NewRef("organization_members")
+	var all map[string]MemberDoc
+	if err := ref.Get(ctx, &all); err != nil && err.Error() != "unexpected end of JSON input" {
 		return MemberDoc{}, err
 	}
+	for _, member := range all {
+		if member.OrganizationID == orgID.String() && member.UserID == userID.String() {
+			return member, nil
+		}
+	}
 
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format(time.RFC3339)
 	member := MemberDoc{
 		OrganizationID: orgID.String(),
 		UserID:         userID.String(),
@@ -162,36 +142,30 @@ func (s *Store) EnsureOrganizationMembership(ctx context.Context, orgID, userID 
 		UpdatedAt:      now,
 	}
 	id := uuid.New()
-	if _, err := col.Doc(id.String()).Set(ctx, member); err != nil {
+	if err := ref.Child(id.String()).Set(ctx, member); err != nil {
 		return MemberDoc{}, err
 	}
 	return member, nil
 }
 
 func (s *Store) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]domain.Member, error) {
-	memberIter := s.client.Collection("organization_members").Where("organization_id", "==", orgID.String()).Documents(ctx)
-	defer memberIter.Stop()
+	ref := s.client.NewRef("organization_members")
+	var all map[string]MemberDoc
+	if err := ref.Get(ctx, &all); err != nil {
+		return nil, err
+	}
 
 	var members []domain.Member
-	for {
-		doc, err := memberIter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		var m MemberDoc
-		if err := doc.DataTo(&m); err != nil {
-			return nil, err
-		}
-		userID, _ := uuid.Parse(m.UserID)
-		userDoc, err := s.client.Collection("users").Doc(m.UserID).Get(ctx)
-		if err != nil {
+	for _, m := range all {
+		if m.OrganizationID != orgID.String() {
 			continue
 		}
+		userID, _ := uuid.Parse(m.UserID)
 		var user UserDoc
-		if err := userDoc.DataTo(&user); err != nil {
+		if err := s.client.NewRef("users").Child(m.UserID).Get(ctx, &user); err != nil {
+			continue
+		}
+		if user.Email == "" {
 			continue
 		}
 		members = append(members, domain.Member{
@@ -205,34 +179,32 @@ func (s *Store) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([
 }
 
 func (s *Store) GetOrganizationMember(ctx context.Context, orgID, userID uuid.UUID) (MemberDoc, error) {
-	iter := s.client.Collection("organization_members").Where("organization_id", "==", orgID.String()).Where("user_id", "==", userID.String()).Limit(1).Documents(ctx)
-	doc, err := iter.Next()
-	if errors.Is(err, iterator.Done) {
-		return MemberDoc{}, ErrNotFound
-	}
-	if err != nil {
+	ref := s.client.NewRef("organization_members")
+	var all map[string]MemberDoc
+	if err := ref.Get(ctx, &all); err != nil {
 		return MemberDoc{}, err
 	}
-	var m MemberDoc
-	if err := doc.DataTo(&m); err != nil {
-		return MemberDoc{}, err
+	for _, m := range all {
+		if m.OrganizationID == orgID.String() && m.UserID == userID.String() {
+			return m, nil
+		}
 	}
-	return m, nil
+	return MemberDoc{}, ErrNotFound
 }
 
 // --- Meetings ---
 
 type MeetingDoc struct {
-	OrganizationID string     `firestore:"organization_id"`
-	Year           int32      `firestore:"year"`
-	Month          int32      `firestore:"month"`
-	ScheduledAt    *time.Time `firestore:"scheduled_at,omitempty"`
-	MeetingURL     *string    `firestore:"meeting_url,omitempty"`
-	Notes          *string    `firestore:"notes,omitempty"`
-	Status         string     `firestore:"status"`
-	UpdatedBy      string     `firestore:"updated_by"`
-	CreatedAt      time.Time  `firestore:"created_at"`
-	UpdatedAt      time.Time  `firestore:"updated_at"`
+	OrganizationID string  `json:"organization_id"`
+	Year           int32   `json:"year"`
+	Month          int32   `json:"month"`
+	ScheduledAt    *string `json:"scheduled_at,omitempty"`
+	MeetingURL     *string `json:"meeting_url,omitempty"`
+	Notes          *string `json:"notes,omitempty"`
+	Status         string  `json:"status"`
+	UpdatedBy      string  `json:"updated_by"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 func meetingDocID(orgID uuid.UUID, year, month int32) string {
@@ -241,48 +213,44 @@ func meetingDocID(orgID uuid.UUID, year, month int32) string {
 
 func (s *Store) GetMeetingByPeriod(ctx context.Context, orgID uuid.UUID, year, month int32) (uuid.UUID, MeetingDoc, error) {
 	docID := meetingDocID(orgID, year, month)
-	doc, err := s.client.Collection("meetings").Doc(docID).Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return uuid.Nil, MeetingDoc{}, ErrNotFound
-		}
-		return uuid.Nil, MeetingDoc{}, err
-	}
 	var m MeetingDoc
-	if err := doc.DataTo(&m); err != nil {
+	if err := s.client.NewRef("meetings").Child(docID).Get(ctx, &m); err != nil {
 		return uuid.Nil, MeetingDoc{}, err
 	}
-	id, _ := uuid.Parse(doc.Ref.ID)
+	if m.OrganizationID == "" {
+		return uuid.Nil, MeetingDoc{}, ErrNotFound
+	}
+	id, _ := uuid.Parse(docID)
 	return id, m, nil
 }
 
 func (s *Store) UpsertMeeting(ctx context.Context, orgID uuid.UUID, year, month int32, scheduledAt *time.Time, meetingURL, notes *string, meetingStatus, updatedBy string) (uuid.UUID, MeetingDoc, error) {
 	docID := meetingDocID(orgID, year, month)
-	now := time.Now().UTC()
-	ref := s.client.Collection("meetings").Doc(docID)
+	now := time.Now().UTC().Format(time.RFC3339)
+	ref := s.client.NewRef("meetings").Child(docID)
 
-	doc, err := ref.Get(ctx)
 	var m MeetingDoc
-	if err == nil {
-		if err := doc.DataTo(&m); err != nil {
-			return uuid.Nil, MeetingDoc{}, err
-		}
-	}
+	_ = ref.Get(ctx, &m)
 
 	m.OrganizationID = orgID.String()
 	m.Year = year
 	m.Month = month
-	m.ScheduledAt = scheduledAt
+	if scheduledAt != nil {
+		s := scheduledAt.Format(time.RFC3339)
+		m.ScheduledAt = &s
+	} else {
+		m.ScheduledAt = nil
+	}
 	m.MeetingURL = meetingURL
 	m.Notes = notes
 	m.Status = meetingStatus
 	m.UpdatedBy = updatedBy
 	m.UpdatedAt = now
-	if m.CreatedAt.IsZero() {
+	if m.CreatedAt == "" {
 		m.CreatedAt = now
 	}
 
-	if _, err := ref.Set(ctx, m); err != nil {
+	if err := ref.Set(ctx, m); err != nil {
 		return uuid.Nil, MeetingDoc{}, err
 	}
 	id, _ := uuid.Parse(docID)
@@ -290,23 +258,17 @@ func (s *Store) UpsertMeeting(ctx context.Context, orgID uuid.UUID, year, month 
 }
 
 func (s *Store) ListMeetingPeriods(ctx context.Context, orgID uuid.UUID) ([]MeetingDoc, error) {
-	iter := s.client.Collection("meetings").Where("organization_id", "==", orgID.String()).Documents(ctx)
-	defer iter.Stop()
+	ref := s.client.NewRef("meetings")
+	var all map[string]MeetingDoc
+	if err := ref.Get(ctx, &all); err != nil {
+		return nil, err
+	}
 
 	var results []MeetingDoc
-	for {
-		doc, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
+	for _, m := range all {
+		if m.OrganizationID == orgID.String() {
+			results = append(results, m)
 		}
-		if err != nil {
-			return nil, err
-		}
-		var m MeetingDoc
-		if err := doc.DataTo(&m); err != nil {
-			continue
-		}
-		results = append(results, m)
 	}
 	return results, nil
 }
@@ -314,44 +276,40 @@ func (s *Store) ListMeetingPeriods(ctx context.Context, orgID uuid.UUID) ([]Meet
 // --- Tasks ---
 
 type TaskDoc struct {
-	OrganizationID string     `firestore:"organization_id"`
-	Year           int32      `firestore:"year"`
-	Month          int32      `firestore:"month"`
-	Title          string     `firestore:"title"`
-	Status         string     `firestore:"status"`
-	DueDate        *time.Time `firestore:"due_date,omitempty"`
-	ReferenceURL   *string    `firestore:"reference_url,omitempty"`
-	AssigneeID     *string    `firestore:"assignee_id,omitempty"`
-	CreatedBy      string     `firestore:"created_by"`
-	Version        int32      `firestore:"version"`
-	CreatedAt      time.Time  `firestore:"created_at"`
-	UpdatedAt      time.Time  `firestore:"updated_at"`
-	DeletedAt      *time.Time `firestore:"deleted_at,omitempty"`
+	OrganizationID string  `json:"organization_id"`
+	Year           int32   `json:"year"`
+	Month          int32   `json:"month"`
+	Title          string  `json:"title"`
+	Status         string  `json:"status"`
+	DueDate        *string `json:"due_date,omitempty"`
+	ReferenceURL   *string `json:"reference_url,omitempty"`
+	AssigneeID     *string `json:"assignee_id,omitempty"`
+	CreatedBy      string  `json:"created_by"`
+	Version        int32   `json:"version"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
+	DeletedAt      *string `json:"deleted_at,omitempty"`
 }
 
 func (s *Store) CreateTask(ctx context.Context, task TaskDoc) (uuid.UUID, TaskDoc, error) {
 	id := uuid.New()
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format(time.RFC3339)
 	task.Version = 1
 	task.CreatedAt = now
 	task.UpdatedAt = now
-	if _, err := s.client.Collection("tasks").Doc(id.String()).Set(ctx, task); err != nil {
+	if err := s.client.NewRef("tasks").Child(id.String()).Set(ctx, task); err != nil {
 		return uuid.Nil, TaskDoc{}, err
 	}
 	return id, task, nil
 }
 
 func (s *Store) GetTaskByID(ctx context.Context, orgID, taskID uuid.UUID) (TaskDoc, error) {
-	doc, err := s.client.Collection("tasks").Doc(taskID.String()).Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return TaskDoc{}, ErrNotFound
-		}
+	var t TaskDoc
+	if err := s.client.NewRef("tasks").Child(taskID.String()).Get(ctx, &t); err != nil {
 		return TaskDoc{}, err
 	}
-	var t TaskDoc
-	if err := doc.DataTo(&t); err != nil {
-		return TaskDoc{}, err
+	if t.OrganizationID == "" {
+		return TaskDoc{}, ErrNotFound
 	}
 	if t.OrganizationID != orgID.String() || t.DeletedAt != nil {
 		return TaskDoc{}, ErrNotFound
@@ -360,49 +318,32 @@ func (s *Store) GetTaskByID(ctx context.Context, orgID, taskID uuid.UUID) (TaskD
 }
 
 func (s *Store) ListTasksByPeriod(ctx context.Context, orgID uuid.UUID, year, month int32) ([]uuid.UUID, []TaskDoc, error) {
-	iter := s.client.Collection("tasks").
-		Where("organization_id", "==", orgID.String()).
-		Where("year", "==", year).
-		Where("month", "==", month).
-		Documents(ctx)
-	defer iter.Stop()
+	ref := s.client.NewRef("tasks")
+	var all map[string]TaskDoc
+	if err := ref.Get(ctx, &all); err != nil {
+		return nil, nil, err
+	}
 
 	var ids []uuid.UUID
 	var tasks []TaskDoc
-	for {
-		doc, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
+	for idStr, t := range all {
+		if t.OrganizationID == orgID.String() && t.Year == year && t.Month == month && t.DeletedAt == nil {
+			id, _ := uuid.Parse(idStr)
+			ids = append(ids, id)
+			tasks = append(tasks, t)
 		}
-		if err != nil {
-			return nil, nil, err
-		}
-		var t TaskDoc
-		if err := doc.DataTo(&t); err != nil {
-			continue
-		}
-		if t.DeletedAt != nil {
-			continue
-		}
-		id, _ := uuid.Parse(doc.Ref.ID)
-		ids = append(ids, id)
-		tasks = append(tasks, t)
 	}
 	return ids, tasks, nil
 }
 
 func (s *Store) UpdateTask(ctx context.Context, orgID, taskID uuid.UUID, title, taskStatus string, dueDate *time.Time, referenceURL *string, assigneeID *uuid.UUID, expectedVersion int32) (TaskDoc, error) {
-	ref := s.client.Collection("tasks").Doc(taskID.String())
-	doc, err := ref.Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return TaskDoc{}, ErrNotFound
-		}
+	ref := s.client.NewRef("tasks").Child(taskID.String())
+	var t TaskDoc
+	if err := ref.Get(ctx, &t); err != nil {
 		return TaskDoc{}, err
 	}
-	var t TaskDoc
-	if err := doc.DataTo(&t); err != nil {
-		return TaskDoc{}, err
+	if t.OrganizationID == "" {
+		return TaskDoc{}, ErrNotFound
 	}
 	if t.OrganizationID != orgID.String() || t.DeletedAt != nil {
 		return TaskDoc{}, ErrNotFound
@@ -413,7 +354,12 @@ func (s *Store) UpdateTask(ctx context.Context, orgID, taskID uuid.UUID, title, 
 
 	t.Title = title
 	t.Status = taskStatus
-	t.DueDate = dueDate
+	if dueDate != nil {
+		s := dueDate.Format(time.RFC3339)
+		t.DueDate = &s
+	} else {
+		t.DueDate = nil
+	}
 	t.ReferenceURL = referenceURL
 	if assigneeID != nil {
 		s := assigneeID.String()
@@ -422,26 +368,22 @@ func (s *Store) UpdateTask(ctx context.Context, orgID, taskID uuid.UUID, title, 
 		t.AssigneeID = nil
 	}
 	t.Version++
-	t.UpdatedAt = time.Now().UTC()
+	t.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
-	if _, err := ref.Set(ctx, t); err != nil {
+	if err := ref.Set(ctx, t); err != nil {
 		return TaskDoc{}, err
 	}
 	return t, nil
 }
 
 func (s *Store) DeleteTask(ctx context.Context, orgID, taskID uuid.UUID, expectedVersion int32) error {
-	ref := s.client.Collection("tasks").Doc(taskID.String())
-	doc, err := ref.Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return ErrNotFound
-		}
+	ref := s.client.NewRef("tasks").Child(taskID.String())
+	var t TaskDoc
+	if err := ref.Get(ctx, &t); err != nil {
 		return err
 	}
-	var t TaskDoc
-	if err := doc.DataTo(&t); err != nil {
-		return err
+	if t.OrganizationID == "" {
+		return ErrNotFound
 	}
 	if t.OrganizationID != orgID.String() || t.DeletedAt != nil {
 		return ErrNotFound
@@ -450,16 +392,18 @@ func (s *Store) DeleteTask(ctx context.Context, orgID, taskID uuid.UUID, expecte
 		return domain.NewAppError(domain.ErrorCodeConflict, "task version conflict", nil)
 	}
 
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format(time.RFC3339)
 	t.DeletedAt = &now
 	t.UpdatedAt = now
-	_, err = ref.Set(ctx, t)
-	return err
+	return ref.Set(ctx, t)
 }
 
 func (s *Store) ListTaskPeriodSummaries(ctx context.Context, orgID uuid.UUID) ([]TaskPeriodSummary, error) {
-	iter := s.client.Collection("tasks").Where("organization_id", "==", orgID.String()).Documents(ctx)
-	defer iter.Stop()
+	ref := s.client.NewRef("tasks")
+	var all map[string]TaskDoc
+	if err := ref.Get(ctx, &all); err != nil {
+		return nil, err
+	}
 
 	type periodKey struct {
 		year  int32
@@ -467,19 +411,8 @@ func (s *Store) ListTaskPeriodSummaries(ctx context.Context, orgID uuid.UUID) ([
 	}
 
 	summaryMap := map[periodKey]*TaskPeriodSummary{}
-	for {
-		doc, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		var t TaskDoc
-		if err := doc.DataTo(&t); err != nil {
-			continue
-		}
-		if t.DeletedAt != nil {
+	for idStr, t := range all {
+		if t.OrganizationID != orgID.String() || t.DeletedAt != nil {
 			continue
 		}
 		k := periodKey{year: t.Year, month: t.Month}
@@ -493,7 +426,7 @@ func (s *Store) ListTaskPeriodSummaries(ctx context.Context, orgID uuid.UUID) ([
 			summary.DoneTaskCount++
 		}
 
-		taskID, _ := uuid.Parse(doc.Ref.ID)
+		taskID, _ := uuid.Parse(idStr)
 		approvals, _ := s.ListTaskApprovals(ctx, taskID)
 		for _, a := range approvals {
 			summary.RequiredApprovals++
@@ -511,91 +444,75 @@ func (s *Store) ListTaskPeriodSummaries(ctx context.Context, orgID uuid.UUID) ([
 }
 
 type TaskPeriodSummary struct {
-	Year               int32
-	Month              int32
-	TaskCount          int64
-	DoneTaskCount      int64
-	RequiredApprovals  int64
-	ApprovedApprovals  int64
+	Year              int32
+	Month             int32
+	TaskCount         int64
+	DoneTaskCount     int64
+	RequiredApprovals int64
+	ApprovedApprovals int64
 }
 
 // --- Task Approvals ---
 
 type TaskApprovalDoc struct {
-	TaskID         string     `firestore:"task_id"`
-	ApproverUserID string     `firestore:"approver_user_id"`
-	ApprovedAt     *time.Time `firestore:"approved_at,omitempty"`
-	CreatedAt      time.Time  `firestore:"created_at"`
+	TaskID         string  `json:"task_id"`
+	ApproverUserID string  `json:"approver_user_id"`
+	ApprovedAt     *string `json:"approved_at,omitempty"`
+	CreatedAt      string  `json:"created_at"`
 }
 
 func (s *Store) ListTaskApprovals(ctx context.Context, taskID uuid.UUID) ([]TaskApprovalDoc, error) {
-	iter := s.client.Collection("task_approvals").Where("task_id", "==", taskID.String()).Documents(ctx)
-	defer iter.Stop()
+	ref := s.client.NewRef("task_approvals")
+	var all map[string]TaskApprovalDoc
+	if err := ref.Get(ctx, &all); err != nil {
+		return nil, nil
+	}
 
 	var results []TaskApprovalDoc
-	for {
-		doc, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
+	for _, a := range all {
+		if a.TaskID == taskID.String() {
+			results = append(results, a)
 		}
-		if err != nil {
-			return nil, err
-		}
-		var a TaskApprovalDoc
-		if err := doc.DataTo(&a); err != nil {
-			continue
-		}
-		results = append(results, a)
 	}
 	return results, nil
 }
 
 func (s *Store) ApproveTask(ctx context.Context, taskID, approverUserID uuid.UUID) error {
-	iter := s.client.Collection("task_approvals").
-		Where("task_id", "==", taskID.String()).
-		Where("approver_user_id", "==", approverUserID.String()).
-		Limit(1).Documents(ctx)
-
-	doc, err := iter.Next()
-	if errors.Is(err, iterator.Done) {
+	ref := s.client.NewRef("task_approvals")
+	var all map[string]TaskApprovalDoc
+	if err := ref.Get(ctx, &all); err != nil {
 		return ErrNotFound
 	}
-	if err != nil {
-		return err
-	}
 
-	var a TaskApprovalDoc
-	if err := doc.DataTo(&a); err != nil {
-		return err
+	for idStr, a := range all {
+		if a.TaskID == taskID.String() && a.ApproverUserID == approverUserID.String() {
+			if a.ApprovedAt != nil {
+				return domain.NewAppError(domain.ErrorCodeConflict, "task already approved", nil)
+			}
+			now := time.Now().UTC().Format(time.RFC3339)
+			a.ApprovedAt = &now
+			return ref.Child(idStr).Set(ctx, a)
+		}
 	}
-	if a.ApprovedAt != nil {
-		return domain.NewAppError(domain.ErrorCodeConflict, "task already approved", nil)
-	}
-
-	now := time.Now().UTC()
-	a.ApprovedAt = &now
-	_, err = doc.Ref.Set(ctx, a)
-	return err
+	return ErrNotFound
 }
 
 func (s *Store) ReplaceTaskApprovals(ctx context.Context, taskID uuid.UUID, approvedMap map[uuid.UUID]*time.Time, approverIDs []uuid.UUID) error {
-	// Delete existing approvals
-	iter := s.client.Collection("task_approvals").Where("task_id", "==", taskID.String()).Documents(ctx)
-	for {
-		doc, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if _, err := doc.Ref.Delete(ctx); err != nil {
-			return err
+	ref := s.client.NewRef("task_approvals")
+	var all map[string]TaskApprovalDoc
+	_ = ref.Get(ctx, &all)
+
+	// Delete existing approvals for this task
+	for idStr, a := range all {
+		if a.TaskID == taskID.String() {
+			if err := ref.Child(idStr).Delete(ctx); err != nil {
+				return err
+			}
 		}
 	}
 
 	// Create new approvals
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format(time.RFC3339)
 	for _, approverID := range approverIDs {
 		approval := TaskApprovalDoc{
 			TaskID:         taskID.String(),
@@ -603,12 +520,13 @@ func (s *Store) ReplaceTaskApprovals(ctx context.Context, taskID uuid.UUID, appr
 			CreatedAt:      now,
 		}
 		if approvedMap != nil {
-			if existing, ok := approvedMap[approverID]; ok {
-				approval.ApprovedAt = existing
+			if existing, ok := approvedMap[approverID]; ok && existing != nil {
+				s := existing.Format(time.RFC3339)
+				approval.ApprovedAt = &s
 			}
 		}
 		id := uuid.New()
-		if _, err := s.client.Collection("task_approvals").Doc(id.String()).Set(ctx, approval); err != nil {
+		if err := ref.Child(id.String()).Set(ctx, approval); err != nil {
 			return err
 		}
 	}
@@ -618,17 +536,17 @@ func (s *Store) ReplaceTaskApprovals(ctx context.Context, taskID uuid.UUID, appr
 // --- Announcements ---
 
 type AnnouncementDoc struct {
-	OrganizationID   string     `firestore:"organization_id"`
-	Year             int32      `firestore:"year"`
-	Month            int32      `firestore:"month"`
-	Body             string     `firestore:"body"`
-	Status           string     `firestore:"status"`
-	PublishChannel   *string    `firestore:"publish_channel,omitempty"`
-	DiscordMessageID *string    `firestore:"discord_message_id,omitempty"`
-	LastError        *string    `firestore:"last_error,omitempty"`
-	UpdatedBy        string     `firestore:"updated_by"`
-	CreatedAt        time.Time  `firestore:"created_at"`
-	UpdatedAt        time.Time  `firestore:"updated_at"`
+	OrganizationID   string  `json:"organization_id"`
+	Year             int32   `json:"year"`
+	Month            int32   `json:"month"`
+	Body             string  `json:"body"`
+	Status           string  `json:"status"`
+	PublishChannel   *string `json:"publish_channel,omitempty"`
+	DiscordMessageID *string `json:"discord_message_id,omitempty"`
+	LastError        *string `json:"last_error,omitempty"`
+	UpdatedBy        string  `json:"updated_by"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
 }
 
 func announcementDocID(orgID uuid.UUID, year, month int32) string {
@@ -637,32 +555,24 @@ func announcementDocID(orgID uuid.UUID, year, month int32) string {
 
 func (s *Store) GetAnnouncementByPeriod(ctx context.Context, orgID uuid.UUID, year, month int32) (uuid.UUID, AnnouncementDoc, error) {
 	docID := announcementDocID(orgID, year, month)
-	doc, err := s.client.Collection("announcements").Doc(docID).Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return uuid.Nil, AnnouncementDoc{}, ErrNotFound
-		}
+	var a AnnouncementDoc
+	if err := s.client.NewRef("announcements").Child(docID).Get(ctx, &a); err != nil {
 		return uuid.Nil, AnnouncementDoc{}, err
 	}
-	var a AnnouncementDoc
-	if err := doc.DataTo(&a); err != nil {
-		return uuid.Nil, AnnouncementDoc{}, err
+	if a.OrganizationID == "" {
+		return uuid.Nil, AnnouncementDoc{}, ErrNotFound
 	}
 	id, _ := uuid.Parse(docID)
 	return id, a, nil
 }
 
 func (s *Store) GetAnnouncementByID(ctx context.Context, id uuid.UUID) (AnnouncementDoc, error) {
-	doc, err := s.client.Collection("announcements").Doc(id.String()).Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return AnnouncementDoc{}, ErrNotFound
-		}
+	var a AnnouncementDoc
+	if err := s.client.NewRef("announcements").Child(id.String()).Get(ctx, &a); err != nil {
 		return AnnouncementDoc{}, err
 	}
-	var a AnnouncementDoc
-	if err := doc.DataTo(&a); err != nil {
-		return AnnouncementDoc{}, err
+	if a.OrganizationID == "" {
+		return AnnouncementDoc{}, ErrNotFound
 	}
 	return a, nil
 }
@@ -680,16 +590,11 @@ func (s *Store) GetAnnouncementByIDForOrg(ctx context.Context, orgID, announceme
 
 func (s *Store) UpsertAnnouncementDraft(ctx context.Context, orgID uuid.UUID, year, month int32, body string, publishChannel *string, updatedBy string) (uuid.UUID, AnnouncementDoc, error) {
 	docID := announcementDocID(orgID, year, month)
-	now := time.Now().UTC()
-	ref := s.client.Collection("announcements").Doc(docID)
+	now := time.Now().UTC().Format(time.RFC3339)
+	ref := s.client.NewRef("announcements").Child(docID)
 
-	doc, err := ref.Get(ctx)
 	var a AnnouncementDoc
-	if err == nil {
-		if err := doc.DataTo(&a); err != nil {
-			return uuid.Nil, AnnouncementDoc{}, err
-		}
-	}
+	_ = ref.Get(ctx, &a)
 
 	a.OrganizationID = orgID.String()
 	a.Year = year
@@ -699,11 +604,11 @@ func (s *Store) UpsertAnnouncementDraft(ctx context.Context, orgID uuid.UUID, ye
 	a.PublishChannel = publishChannel
 	a.UpdatedBy = updatedBy
 	a.UpdatedAt = now
-	if a.CreatedAt.IsZero() {
+	if a.CreatedAt == "" {
 		a.CreatedAt = now
 	}
 
-	if _, err := ref.Set(ctx, a); err != nil {
+	if err := ref.Set(ctx, a); err != nil {
 		return uuid.Nil, AnnouncementDoc{}, err
 	}
 	id, _ := uuid.Parse(docID)
@@ -711,17 +616,13 @@ func (s *Store) UpsertAnnouncementDraft(ctx context.Context, orgID uuid.UUID, ye
 }
 
 func (s *Store) RequestAnnouncementPublish(ctx context.Context, orgID, announcementID uuid.UUID, publishChannel *string, updatedBy string) (uuid.UUID, AnnouncementDoc, error) {
-	ref := s.client.Collection("announcements").Doc(announcementID.String())
-	doc, err := ref.Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return uuid.Nil, AnnouncementDoc{}, ErrNotFound
-		}
+	ref := s.client.NewRef("announcements").Child(announcementID.String())
+	var a AnnouncementDoc
+	if err := ref.Get(ctx, &a); err != nil {
 		return uuid.Nil, AnnouncementDoc{}, err
 	}
-	var a AnnouncementDoc
-	if err := doc.DataTo(&a); err != nil {
-		return uuid.Nil, AnnouncementDoc{}, err
+	if a.OrganizationID == "" {
+		return uuid.Nil, AnnouncementDoc{}, ErrNotFound
 	}
 	if a.OrganizationID != orgID.String() {
 		return uuid.Nil, AnnouncementDoc{}, ErrNotFound
@@ -732,106 +633,86 @@ func (s *Store) RequestAnnouncementPublish(ctx context.Context, orgID, announcem
 		a.PublishChannel = publishChannel
 	}
 	a.UpdatedBy = updatedBy
-	a.UpdatedAt = time.Now().UTC()
+	a.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
-	if _, err := ref.Set(ctx, a); err != nil {
+	if err := ref.Set(ctx, a); err != nil {
 		return uuid.Nil, AnnouncementDoc{}, err
 	}
 	return announcementID, a, nil
 }
 
 func (s *Store) CompleteAnnouncementPublish(ctx context.Context, id uuid.UUID, discordMessageID string) (uuid.UUID, AnnouncementDoc, error) {
-	ref := s.client.Collection("announcements").Doc(id.String())
-	doc, err := ref.Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return uuid.Nil, AnnouncementDoc{}, ErrNotFound
-		}
+	ref := s.client.NewRef("announcements").Child(id.String())
+	var a AnnouncementDoc
+	if err := ref.Get(ctx, &a); err != nil {
 		return uuid.Nil, AnnouncementDoc{}, err
 	}
-	var a AnnouncementDoc
-	if err := doc.DataTo(&a); err != nil {
-		return uuid.Nil, AnnouncementDoc{}, err
+	if a.OrganizationID == "" {
+		return uuid.Nil, AnnouncementDoc{}, ErrNotFound
 	}
 
 	a.Status = domain.AnnouncementStatusPublished
 	a.DiscordMessageID = &discordMessageID
 	a.LastError = nil
-	a.UpdatedAt = time.Now().UTC()
+	a.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
-	if _, err := ref.Set(ctx, a); err != nil {
+	if err := ref.Set(ctx, a); err != nil {
 		return uuid.Nil, AnnouncementDoc{}, err
 	}
 	return id, a, nil
 }
 
 func (s *Store) FailAnnouncementPublish(ctx context.Context, id uuid.UUID, lastError string) (uuid.UUID, AnnouncementDoc, error) {
-	ref := s.client.Collection("announcements").Doc(id.String())
-	doc, err := ref.Get(ctx)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return uuid.Nil, AnnouncementDoc{}, ErrNotFound
-		}
+	ref := s.client.NewRef("announcements").Child(id.String())
+	var a AnnouncementDoc
+	if err := ref.Get(ctx, &a); err != nil {
 		return uuid.Nil, AnnouncementDoc{}, err
 	}
-	var a AnnouncementDoc
-	if err := doc.DataTo(&a); err != nil {
-		return uuid.Nil, AnnouncementDoc{}, err
+	if a.OrganizationID == "" {
+		return uuid.Nil, AnnouncementDoc{}, ErrNotFound
 	}
 
 	a.Status = domain.AnnouncementStatusPublishFailed
 	a.LastError = &lastError
-	a.UpdatedAt = time.Now().UTC()
+	a.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
-	if _, err := ref.Set(ctx, a); err != nil {
+	if err := ref.Set(ctx, a); err != nil {
 		return uuid.Nil, AnnouncementDoc{}, err
 	}
 	return id, a, nil
 }
 
 func (s *Store) ListAnnouncementPeriods(ctx context.Context, orgID uuid.UUID) ([]AnnouncementDoc, error) {
-	iter := s.client.Collection("announcements").Where("organization_id", "==", orgID.String()).Documents(ctx)
-	defer iter.Stop()
+	ref := s.client.NewRef("announcements")
+	var all map[string]AnnouncementDoc
+	if err := ref.Get(ctx, &all); err != nil {
+		return nil, err
+	}
 
 	var results []AnnouncementDoc
-	for {
-		doc, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
+	for _, a := range all {
+		if a.OrganizationID == orgID.String() {
+			results = append(results, a)
 		}
-		if err != nil {
-			return nil, err
-		}
-		var a AnnouncementDoc
-		if err := doc.DataTo(&a); err != nil {
-			continue
-		}
-		results = append(results, a)
 	}
 	return results, nil
 }
 
 func (s *Store) ListPendingPublishRequests(ctx context.Context) ([]uuid.UUID, []AnnouncementDoc, error) {
-	iter := s.client.Collection("announcements").Where("status", "==", domain.AnnouncementStatusPublishRequested).Documents(ctx)
-	defer iter.Stop()
+	ref := s.client.NewRef("announcements")
+	var all map[string]AnnouncementDoc
+	if err := ref.Get(ctx, &all); err != nil {
+		return nil, nil, err
+	}
 
 	var ids []uuid.UUID
 	var results []AnnouncementDoc
-	for {
-		doc, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
-			break
+	for idStr, a := range all {
+		if a.Status == domain.AnnouncementStatusPublishRequested {
+			id, _ := uuid.Parse(idStr)
+			ids = append(ids, id)
+			results = append(results, a)
 		}
-		if err != nil {
-			return nil, nil, err
-		}
-		var a AnnouncementDoc
-		if err := doc.DataTo(&a); err != nil {
-			continue
-		}
-		id, _ := uuid.Parse(doc.Ref.ID)
-		ids = append(ids, id)
-		results = append(results, a)
 	}
 	return ids, results, nil
 }
@@ -839,25 +720,24 @@ func (s *Store) ListPendingPublishRequests(ctx context.Context) ([]uuid.UUID, []
 // --- Audit Logs ---
 
 type AuditLogDoc struct {
-	OrganizationID string  `firestore:"organization_id"`
-	ActorUserID    *string `firestore:"actor_user_id,omitempty"`
-	ActorType      string  `firestore:"actor_type"`
-	ActorLabel     string  `firestore:"actor_label"`
-	Action         string  `firestore:"action"`
-	ResourceType   string  `firestore:"resource_type"`
-	ResourceID     string  `firestore:"resource_id"`
-	BeforeState    any     `firestore:"before_state,omitempty"`
-	AfterState     any     `firestore:"after_state,omitempty"`
-	Result         string  `firestore:"result"`
-	IP             string  `firestore:"ip"`
-	CreatedAt      time.Time `firestore:"created_at"`
+	OrganizationID string `json:"organization_id"`
+	ActorUserID    *string `json:"actor_user_id,omitempty"`
+	ActorType      string `json:"actor_type"`
+	ActorLabel     string `json:"actor_label"`
+	Action         string `json:"action"`
+	ResourceType   string `json:"resource_type"`
+	ResourceID     string `json:"resource_id"`
+	BeforeState    any    `json:"before_state,omitempty"`
+	AfterState     any    `json:"after_state,omitempty"`
+	Result         string `json:"result"`
+	IP             string `json:"ip"`
+	CreatedAt      string `json:"created_at"`
 }
 
 func (s *Store) CreateAuditLog(ctx context.Context, log AuditLogDoc) error {
-	log.CreatedAt = time.Now().UTC()
+	log.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New()
-	_, err := s.client.Collection("audit_logs").Doc(id.String()).Set(ctx, log)
-	return err
+	return s.client.NewRef("audit_logs").Child(id.String()).Set(ctx, log)
 }
 
 // --- Helper: parse UUID from potentially invalid strings ---

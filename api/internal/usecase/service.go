@@ -289,7 +289,7 @@ func (s *Service) CreateTask(ctx context.Context, actor domain.Actor, input Crea
 		Month:          input.Month,
 		Title:          input.Title,
 		Status:         input.Status,
-		DueDate:        input.DueDate,
+		DueDate:        timeToStringPtr(input.DueDate),
 		ReferenceURL:   input.ReferenceURL,
 		AssigneeID:     assigneeIDStr,
 		CreatedBy:      actor.UserID.String(),
@@ -349,7 +349,7 @@ func (s *Service) UpdateTask(ctx context.Context, actor domain.Actor, input Upda
 	for _, approval := range existingApprovals {
 		approverID, _ := uuid.Parse(approval.ApproverUserID)
 		if approval.ApprovedAt != nil {
-			approvedMap[approverID] = approval.ApprovedAt
+			approvedMap[approverID] = stringPtrToTime(approval.ApprovedAt)
 		}
 	}
 
@@ -643,7 +643,7 @@ func taskFromDoc(id uuid.UUID, doc repository.TaskDoc, approvals []repository.Ta
 		ID:                  id,
 		Title:               doc.Title,
 		Status:              doc.Status,
-		DueDate:             doc.DueDate,
+		DueDate:             stringPtrToTime(doc.DueDate),
 		ReferenceURL:        doc.ReferenceURL,
 		AssigneeID:          assigneeID,
 		CreatedBy:           createdBy,
@@ -661,11 +661,30 @@ func meetingFromDoc(id uuid.UUID, doc repository.MeetingDoc) domain.Meeting {
 		ID:          id,
 		Year:        doc.Year,
 		Month:       doc.Month,
-		ScheduledAt: doc.ScheduledAt,
+		ScheduledAt: stringPtrToTime(doc.ScheduledAt),
 		MeetingURL:  doc.MeetingURL,
 		Notes:       doc.Notes,
 		Status:      doc.Status,
 	}
+}
+
+func timeToStringPtr(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.Format(time.RFC3339)
+	return &s
+}
+
+func stringPtrToTime(s *string) *time.Time {
+	if s == nil {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, *s)
+	if err != nil {
+		return nil
+	}
+	return &t
 }
 
 func announcementFromDoc(id uuid.UUID, doc repository.AnnouncementDoc) domain.Announcement {

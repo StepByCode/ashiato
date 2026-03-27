@@ -58,6 +58,13 @@ go test ./...
 - ヘルスチェックパスは `/` または `/healthz` を使う
 - `PORT` を Coolify が注入する場合はその値を優先する
 
+## Vercel デプロイ時の注意
+
+- Vercel Project の `Root Directory` は `api`
+- Vercel では [vercel.json](/Users/dokkiitech/dev/ashiato/api/vercel.json) の rewrite で全リクエストを単一の Go Function に流す
+- Vercel Function の入口は [api/index.go](/Users/dokkiitech/dev/ashiato/api/api/index.go)
+- 既存の Echo ルーティングは [internal/app/http.go](/Users/dokkiitech/dev/ashiato/api/internal/app/http.go) で共通化している
+
 OpenAPI と `sqlc` の再生成:
 
 ```bash

@@ -92,6 +92,7 @@ flowchart LR
 - DB永続化
 - Coolify 配備時の待受ポートは `PORT` を優先し、未指定時は `9999`
 - ヘルスチェックは `/` または `/healthz`
+- Vercel 配備時は `api/` を Project Root にし、rewrite 経由で Go Function に集約する
 
 #### Discord Bot Service
 

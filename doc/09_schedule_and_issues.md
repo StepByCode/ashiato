@@ -124,16 +124,25 @@ gantt
 
 レビュー・テスト込みでは `×1.3〜1.5` を推奨。
 
-## 7. 月次発行フロー（Vercel Cron）
+## 7. 月次発行フロー（Go CLI CronJob）
 
 ### 概要
 
-毎月1日にVercel Cronが自動実行され、2ヶ月先のイベント計画ページを発行する。
+毎月1日にCronJobが自動実行され、2ヶ月先のイベント計画ページを発行する。
 
-- **実行タイミング**: 毎月1日 0:00 UTC (`0 0 1 * *`)
-- **対象月**: 現在月 + 2ヶ月
-- **例**: 12月1日実行 → 2月分のワークフロー期間が作成される
-- **実行方式**: Vercel Cron → Next.js Route Handler → Backend API
+- **実行タイミング**: 毎月1日（crontab UTC: `0 0 1 * *`）
+- **対象月**: JST基準の現在月 + 2ヶ月
+- **例**: JST 1月1日実行 → 3月分のワークフロー期間が作成される
+- **実行方式**: Coolify CronJob → Go CLI (`cmd/cron`)
+
+### UTC/JST の注意点
+
+サーバーはUTCで動作するが、Go CLIは内部でJST変換して現在月を判定する。
+
+| crontab (UTC) | 実行時刻 (JST) | 備考 |
+| --- | --- | --- |
+| `0 0 1 * *` | JST 1日 9:00 | 推奨。JST基準で1日なので正しく動作 |
+| `0 15 1 * *` | JST 2日 0:00 | これでもJST基準の月は同じ |
 
 ### 作成されるリソース
 
@@ -143,20 +152,13 @@ gantt
 | Announcement | draft | 広報文をSNSにコピペする |
 | Tasks | (ユーザーが手動追加) | イベントページやサムネイルなどの作成を管理 |
 
-### 構成
-
-- **Vercel Cron設定**: `frontend/vercel.json`
-- **Route Handler**: `frontend/src/app/api/cron/provision/route.ts`
-- **Backend API**: `POST /internal/v1/workflow-periods/provision`
-- **Go CLI (手動実行用)**: `api/cmd/cron/main.go`
-
-### 手動実行
+### 実行方法
 
 ```bash
-# Go CLIで直接実行（Docker/Coolify環境）
+# CronJobとして実行（Coolify環境）
 go run ./cmd/cron/main.go
 
-# Backend APIエンドポイント経由
+# Backend APIエンドポイント経由で手動実行
 curl -X POST /internal/v1/workflow-periods/provision \
   -H "X-Cron-Secret: <secret>" \
   -d '{"year": 2026, "month": 3}'
@@ -164,9 +166,9 @@ curl -X POST /internal/v1/workflow-periods/provision \
 
 ### 環境変数
 
-| 変数名 | 設定先 | 用途 |
-| --- | --- | --- |
-| `CRON_SECRET` | Vercel + Backend | Cron認証用の共有シークレット |
+| 変数名 | 用途 |
+| --- | --- |
+| `CRON_SECRET` | 内部API保護用の共有シークレット |
 
 ## 8. 運用ルール
 

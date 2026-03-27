@@ -66,18 +66,19 @@ flowchart LR
     S04 -->|"新規作成"| S04
 ```
 
-## 4.1. 月次発行フロー（Vercel Cron）
+## 4.1. 月次発行フロー（Go CLI CronJob）
 
-毎月1日にVercel Cronが実行され、2ヶ月先の月のワークフロー期間を自動プロビジョニングする。
+毎月1日にCoolify CronJobでGo CLIが実行され、2ヶ月先の月のワークフロー期間を自動プロビジョニングする。
+サーバーはUTCだが、Go CLI内部でJST変換して正しい月を判定する。
 
-例: 12月1日に実行 → 2月分のワークフロー期間（定例・作成・広報ページ）が生成される。
+例: JST 12月1日に実行 → 2月分のワークフロー期間（定例・作成・広報ページ）が生成される。
 
 ```mermaid
 flowchart TD
-    Cron["Vercel Cron（毎月1日 0:00 UTC）"] -->|"GET /api/cron/provision"| RouteHandler["Next.js Route Handler"]
-    RouteHandler -->|"現在月+2を計算"| BackendAPI["POST /internal/v1/workflow-periods/provision"]
-    BackendAPI --> Meeting["Meeting作成（planned）"]
-    BackendAPI --> Announcement["Announcement作成（draft）"]
+    Cron["Coolify CronJob（UTC 0 0 1 * *）"] -->|"go run cmd/cron"| CLI["Go CLI"]
+    CLI -->|"JST基準で現在月+2を計算"| Provision["ProvisionAllOrganizations"]
+    Provision --> Meeting["Meeting作成（planned）"]
+    Provision --> Announcement["Announcement作成（draft）"]
     Meeting --> Sidebar["サイドバーに月が表示"]
     Announcement --> Sidebar
 ```

@@ -66,6 +66,14 @@ func NewHTTPHandler(ctx context.Context) (http.Handler, config.Config, *slog.Log
 	e.HideBanner = true
 	e.HidePort = true
 	e.Use(echomiddleware.Recover())
+	if len(cfg.CORSAllowedOrigins) > 0 {
+		e.Use(echomiddleware.CORSWithConfig(echomiddleware.CORSConfig{
+			AllowOrigins:     cfg.CORSAllowedOrigins,
+			AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
+			AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+			AllowCredentials: true,
+		}))
+	}
 	e.Use(logging.RequestMiddleware(logger))
 	e.Use(authenticator.Middleware())
 	e.HTTPErrorHandler = jsonHTTPErrorHandler

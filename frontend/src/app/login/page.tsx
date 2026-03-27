@@ -26,7 +26,12 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
+      const auth = getFirebaseAuth();
+      if (!auth) {
+        setError("Firebase が設定されていません");
+        return;
+      }
+      await signInWithEmailAndPassword(auth, email, password);
       router.replace("/");
     } catch {
       setError("メールアドレスまたはパスワードが正しくありません");

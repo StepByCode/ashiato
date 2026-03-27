@@ -52,6 +52,7 @@ export function TaskBoard() {
   const { selectedPeriod } = usePeriod();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
+  const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [publicityDone, setPublicityDone] = useState(false);
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -81,6 +82,7 @@ export function TaskBoard() {
       // API unreachable - show empty state
     } finally {
       setLoadingTasks(false);
+      setHasLoadedTasks(true);
     }
   }, []);
 
@@ -102,12 +104,14 @@ export function TaskBoard() {
   }, []);
 
   useEffect(() => {
-    fetchTasks(selectedPeriod.year, selectedPeriod.month);
-    fetchPublicityStatus(selectedPeriod.year, selectedPeriod.month);
+    setHasLoadedTasks(false);
+    setLoadingTasks(true);
+    void fetchTasks(selectedPeriod.year, selectedPeriod.month);
+    void fetchPublicityStatus(selectedPeriod.year, selectedPeriod.month);
   }, [fetchPublicityStatus, fetchTasks, selectedPeriod.year, selectedPeriod.month]);
 
   const isCreationDone = tasks.length > 0 && tasks.every((task) => task.state !== "in_progress");
-  const isWorkflowComplete = !loadingTasks && isCreationDone && publicityDone;
+  const isWorkflowComplete = hasLoadedTasks && isCreationDone && publicityDone;
 
   const handleCreateTask = async (event: FormEvent) => {
     event.preventDefault();

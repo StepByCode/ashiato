@@ -6,11 +6,10 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { usePeriod, periodsEqual, periodLabel, type Period } from "@/lib/period-context";
 
 export type WorkflowStep = "定例" | "作成" | "広報";
 
-const months = ["2026.4月", "2026.3月", "2026.2月", "2026.1月"] as const;
-const currentMonth = "2026.2月";
 const workflowSteps = [
   { label: "定例" as const, href: "/meeting" },
   { label: "作成" as const, href: "/" },
@@ -40,6 +39,8 @@ export function WorkflowShell({
   isWorkflowComplete?: boolean;
   children: ReactNode;
 }) {
+  const { periods, selectedPeriod, selectPeriod } = usePeriod();
+
   const [themeMode, setThemeMode] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
 
@@ -58,6 +59,12 @@ export function WorkflowShell({
   const [showCompleteLabel, setShowCompleteLabel] = useState(false);
 
   const progressWidth = isWorkflowComplete ? "calc(100% - 4rem)" : progressWidths[animatedStep];
+
+  // Build display months from periods (up to 4, newest first).
+  const displayMonths: Period[] =
+    periods.length > 0
+      ? periods.slice(0, 4)
+      : [selectedPeriod];
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", themeMode === "dark");
@@ -96,20 +103,28 @@ export function WorkflowShell({
           </div>
 
           <div className="mt-8 flex flex-1 flex-col justify-center gap-3">
-            {months.map((month) => (
-              <Badge
-                key={month}
-                variant="outline"
-                className={cn(
-                  "min-h-12 rounded-full border px-4 py-3 text-base font-semibold shadow-sm",
-                  month === currentMonth
-                    ? "border-primary/30 bg-primary text-primary-foreground"
-                    : "border-border/70 bg-background/80 text-foreground"
-                )}
-              >
-                {month}
-              </Badge>
-            ))}
+            {displayMonths.map((period) => {
+              const isSelected = periodsEqual(period, selectedPeriod);
+              return (
+                <button
+                  key={`${period.year}-${period.month}`}
+                  type="button"
+                  onClick={() => selectPeriod(period)}
+                >
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "min-h-12 rounded-full border px-4 py-3 text-base font-semibold shadow-sm cursor-pointer",
+                      isSelected
+                        ? "border-primary/30 bg-primary text-primary-foreground"
+                        : "border-border/70 bg-background/80 text-foreground hover:bg-background/95"
+                    )}
+                  >
+                    {periodLabel(period)}
+                  </Badge>
+                </button>
+              );
+            })}
           </div>
 
           <div className="absolute bottom-4 right-4 inline-grid grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-background/80 p-1 shadow-sm">
@@ -150,20 +165,28 @@ export function WorkflowShell({
               <div className="lg:hidden">
                 <div className="flex items-center justify-between gap-3 pb-1">
                   <div className="flex min-w-0 gap-3 overflow-x-auto">
-                    {months.map((month) => (
-                      <Badge
-                        key={month}
-                        variant="outline"
-                        className={cn(
-                          "min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold shadow-sm",
-                          month === currentMonth
-                            ? "border-primary/30 bg-primary text-primary-foreground"
-                            : "border-border/70 bg-background/80 text-foreground"
-                        )}
-                      >
-                        {month}
-                      </Badge>
-                    ))}
+                    {displayMonths.map((period) => {
+                      const isSelected = periodsEqual(period, selectedPeriod);
+                      return (
+                        <button
+                          key={`mobile-${period.year}-${period.month}`}
+                          type="button"
+                          onClick={() => selectPeriod(period)}
+                        >
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold shadow-sm cursor-pointer",
+                              isSelected
+                                ? "border-primary/30 bg-primary text-primary-foreground"
+                                : "border-border/70 bg-background/80 text-foreground"
+                            )}
+                          >
+                            {periodLabel(period)}
+                          </Badge>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   <div className="inline-grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
@@ -250,7 +273,7 @@ export function WorkflowShell({
                       )}
                     >
                       <span className="text-4xl font-black uppercase tracking-[0.2em] text-zinc-700 dark:text-primary sm:text-5xl">
-                        complete！
+                        complete!
                       </span>
                     </div>
                   </div>

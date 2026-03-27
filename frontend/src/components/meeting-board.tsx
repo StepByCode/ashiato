@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
+import { usePeriod } from "@/lib/period-context";
 
 import { WorkflowShell } from "./workflow-shell";
 
@@ -59,6 +60,7 @@ const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const minuteOptions = [0, 15, 30, 45];
 
 export function MeetingBoard() {
+  const { selectedPeriod } = usePeriod();
   const [meetingAt, setMeetingAt] = useState(getDefaultMeetingDateTime);
   const [meetUrl, setMeetUrl] = useState("");
   const [loadingMeeting, setLoadingMeeting] = useState(true);
@@ -70,11 +72,11 @@ export function MeetingBoard() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializedRef = useRef(false);
 
-  const saveMeeting = useCallback((nextMeetingAt: string, nextMeetUrl: string) => {
+  const saveMeeting = useCallback((nextMeetingAt: string, nextMeetUrl: string, year: number, month: number) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       const meetingDate = parseMeetingDateTime(nextMeetingAt);
-      const body: Record<string, string> = {};
+      const body: Record<string, unknown> = { year, month };
       if (meetingDate) {
         body.meetingAt = meetingDate.toISOString();
       }
@@ -87,9 +89,14 @@ export function MeetingBoard() {
   }, []);
 
   useEffect(() => {
+    initializedRef.current = false;
+    setLoadingMeeting(true);
+    setMeetingAt(getDefaultMeetingDateTime());
+    setMeetUrl("");
+
     (async () => {
       try {
-        const res = await apiFetch("/api/v1/meeting", null);
+        const res = await apiFetch(`/api/v1/meeting?year=${selectedPeriod.year}&month=${selectedPeriod.month}`, null);
         if (res.ok) {
           const data = await res.json();
           if (data.meetingAt) {
@@ -106,13 +113,13 @@ export function MeetingBoard() {
           initializedRef.current = true;
         }
       } catch {
-        // API unreachable – use defaults
+        // API unreachable - use defaults
       } finally {
         initializedRef.current = true;
         setLoadingMeeting(false);
       }
     })();
-  }, []);
+  }, [selectedPeriod.year, selectedPeriod.month]);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -131,7 +138,7 @@ export function MeetingBoard() {
     const nextVal = toLocalDateTimeValue(nextDate);
     setMeetingAt(nextVal);
     setCalendarMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
-    if (initializedRef.current) saveMeeting(nextVal, meetUrl);
+    if (initializedRef.current) saveMeeting(nextVal, meetUrl, selectedPeriod.year, selectedPeriod.month);
   };
 
   const handleSelectDate = (nextDay?: Date) => {
@@ -310,7 +317,7 @@ export function MeetingBoard() {
                   onChange={(event) => {
                     const nextUrl = event.target.value;
                     setMeetUrl(nextUrl);
-                    if (initializedRef.current) saveMeeting(meetingAt, nextUrl);
+                    if (initializedRef.current) saveMeeting(meetingAt, nextUrl, selectedPeriod.year, selectedPeriod.month);
                   }}
                 />
                 {jumpHref ? (

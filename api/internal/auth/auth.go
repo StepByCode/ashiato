@@ -93,6 +93,9 @@ func isSimpleAPIPath(reqPath string) bool {
 	if reqPath == "/api/v1/invite" || reqPath == "/api/v1/invites" {
 		return true
 	}
+	if reqPath == "/api/v1/workflow-periods" {
+		return true
+	}
 	return false
 }
 

@@ -580,6 +580,56 @@ func (s *Service) PublishAnnouncement(ctx context.Context, actor domain.Actor, i
 	return result, nil
 }
 
+// ProvisionWorkflowPeriod creates initial meeting (planned) and announcement (draft)
+// for the given year/month if they do not already exist. This is called by the
+// monthly cron job to ensure workflow periods are available 2 months ahead.
+func (s *Service) ProvisionWorkflowPeriod(ctx context.Context, orgID uuid.UUID, year, month int32) error {
+	if err := validatePeriod(year, month); err != nil {
+		return err
+	}
+
+	// Create meeting if not exists.
+	_, _, err := s.store.GetMeetingByPeriod(ctx, orgID, year, month)
+	if errors.Is(err, repository.ErrNotFound) {
+		if _, _, err := s.store.UpsertMeeting(ctx, orgID, year, month, nil, nil, nil, domain.MeetingStatusPlanned, "system"); err != nil {
+			return domain.NewAppError(domain.ErrorCodeInternal, "failed to provision meeting", err)
+		}
+		s.logger.Info("provisioned meeting", "org_id", orgID, "year", year, "month", month)
+	} else if err != nil {
+		return domain.NewAppError(domain.ErrorCodeInternal, "failed to check meeting", err)
+	}
+
+	// Create announcement if not exists.
+	_, _, err = s.store.GetAnnouncementByPeriod(ctx, orgID, year, month)
+	if errors.Is(err, repository.ErrNotFound) {
+		if _, _, err := s.store.UpsertAnnouncementDraft(ctx, orgID, year, month, "", nil, "system"); err != nil {
+			return domain.NewAppError(domain.ErrorCodeInternal, "failed to provision announcement", err)
+		}
+		s.logger.Info("provisioned announcement", "org_id", orgID, "year", year, "month", month)
+	} else if err != nil {
+		return domain.NewAppError(domain.ErrorCodeInternal, "failed to check announcement", err)
+	}
+
+	return nil
+}
+
+// ProvisionAllOrganizations provisions workflow periods for all organizations
+// for the given year/month. Used by the cron job.
+func (s *Service) ProvisionAllOrganizations(ctx context.Context, year, month int32) error {
+	orgIDs, _, err := s.store.ListAllOrganizations(ctx)
+	if err != nil {
+		return domain.NewAppError(domain.ErrorCodeInternal, "failed to list organizations", err)
+	}
+
+	for _, orgID := range orgIDs {
+		if err := s.ProvisionWorkflowPeriod(ctx, orgID, year, month); err != nil {
+			s.logger.Error("failed to provision workflow period", "org_id", orgID, "year", year, "month", month, "error", err)
+			// Continue with other orgs even if one fails.
+		}
+	}
+	return nil
+}
+
 // ListPublishRequests is kept for OpenAPI interface compatibility but returns empty.
 func (s *Service) ListPublishRequests(_ context.Context) ([]domain.PublishRequest, error) {
 	return []domain.PublishRequest{}, nil

@@ -297,6 +297,31 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /internal/v1/workflow-periods/provision:
+    post:
+      operationId: provisionWorkflowPeriod
+      tags: [internal]
+      summary: Provision a workflow period for all organizations
+      description: Creates initial meeting (planned) and announcement (draft) entries for the given year/month if they do not exist. Protected by X-Cron-Secret header.
+      security:
+        - CronSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProvisionWorkflowPeriodRequest"
+      responses:
+        "200":
+          description: Provisioned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionWorkflowPeriodResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /internal/v1/announcement-publish-requests:
     get:
       operationId: getAnnouncementPublishRequests
@@ -366,6 +391,10 @@ components:
       type: apiKey
       in: header
       name: X-Bot-Token
+    CronSecret:
+      type: apiKey
+      in: header
+      name: X-Cron-Secret
   parameters:
     IdParam:
       name: id
@@ -758,6 +787,26 @@ components:
         error:
           type: string
           minLength: 1
+    ProvisionWorkflowPeriodRequest:
+      type: object
+      required: [year, month]
+      properties:
+        year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+    ProvisionWorkflowPeriodResponse:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+        message:
+          type: string
     ErrorResponse:
       type: object
       required: [code, message]

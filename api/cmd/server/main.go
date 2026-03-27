@@ -88,6 +88,32 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 
+	// Internal endpoint: provision workflow period (protected by CRON_SECRET).
+	e.POST("/internal/v1/workflow-periods/provision", func(c echo.Context) error {
+		if cfg.CronSecret == "" {
+			return c.JSON(http.StatusForbidden, map[string]string{"code": "forbidden", "message": "cron secret not configured"})
+		}
+		secret := c.Request().Header.Get("X-Cron-Secret")
+		if secret != cfg.CronSecret {
+			return c.JSON(http.StatusForbidden, map[string]string{"code": "forbidden", "message": "invalid cron secret"})
+		}
+
+		var body struct {
+			Year  int32 `json:"year"`
+			Month int32 `json:"month"`
+		}
+		if err := c.Bind(&body); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"code": "bad_request", "message": "invalid request body"})
+		}
+
+		if err := service.ProvisionAllOrganizations(c.Request().Context(), body.Year, body.Month); err != nil {
+			logger.Error("failed to provision workflow period", "year", body.Year, "month", body.Month, "error", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"code": "internal", "message": err.Error()})
+		}
+
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok", "message": fmt.Sprintf("provisioned %d/%02d", body.Year, body.Month)})
+	})
+
 	strictHandler := oapi.NewStrictHandler(server, nil)
 	oapi.RegisterHandlers(e, strictHandler)
 
@@ -101,6 +127,7 @@ func main() {
 	simpleapi.RegisterMeetingRoutes(simpleGroup, dbClient)
 	simpleapi.RegisterPublicityRoutes(simpleGroup, dbClient)
 	simpleapi.RegisterProfileRoutes(simpleGroup, dbClient)
+	simpleapi.RegisterWorkflowPeriodRoutes(simpleGroup, dbClient)
 
 	// Invite endpoint (creates Firebase user, sends Resend email, notifies Discord).
 	simpleapi.RegisterInviteRoutes(simpleGroup, simpleapi.InviteDeps{

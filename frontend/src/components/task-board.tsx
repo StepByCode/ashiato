@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
+import { usePeriod } from "@/lib/period-context";
 
 import { WorkflowShell } from "./workflow-shell";
 
@@ -47,6 +48,7 @@ const stateMeta: Record<
 };
 
 export function TaskBoard() {
+  const { selectedPeriod } = usePeriod();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [isCreateOpen, setCreateOpen] = useState(false);
@@ -58,9 +60,10 @@ export function TaskBoard() {
   } | null>(null);
   const urlTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const fetchTasks = useCallback(async () => {
+  const fetchTasks = useCallback(async (year: number, month: number) => {
+    setLoadingTasks(true);
     try {
-      const res = await apiFetch("/api/v1/tasks", null);
+      const res = await apiFetch(`/api/v1/tasks?year=${year}&month=${month}`, null);
       if (res.ok) {
         const data = await res.json();
         const fetched = (data.tasks ?? []).map((t: Record<string, string>) => ({
@@ -73,15 +76,15 @@ export function TaskBoard() {
         setTasks(fetched);
       }
     } catch {
-      // API unreachable – show empty state
+      // API unreachable - show empty state
     } finally {
       setLoadingTasks(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+    fetchTasks(selectedPeriod.year, selectedPeriod.month);
+  }, [fetchTasks, selectedPeriod.year, selectedPeriod.month]);
 
   const handleCreateTask = async (event: FormEvent) => {
     event.preventDefault();
@@ -90,7 +93,12 @@ export function TaskBoard() {
     try {
       const res = await apiFetch("/api/v1/tasks", null, {
         method: "POST",
-        body: JSON.stringify({ title: newTitle.trim(), owner: newOwner }),
+        body: JSON.stringify({
+          title: newTitle.trim(),
+          owner: newOwner,
+          year: selectedPeriod.year,
+          month: selectedPeriod.month,
+        }),
       });
       if (res.ok) {
         const data = await res.json();

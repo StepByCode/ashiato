@@ -740,6 +740,28 @@ func (s *Store) CreateAuditLog(ctx context.Context, log AuditLogDoc) error {
 	return s.client.NewRef("audit_logs").Child(id.String()).Set(ctx, log)
 }
 
+// --- Organizations listing ---
+
+func (s *Store) ListAllOrganizations(ctx context.Context) ([]uuid.UUID, []OrganizationDoc, error) {
+	ref := s.client.NewRef("organizations")
+	var all map[string]OrganizationDoc
+	if err := ref.Get(ctx, &all); err != nil {
+		return nil, nil, err
+	}
+
+	ids := make([]uuid.UUID, 0, len(all))
+	docs := make([]OrganizationDoc, 0, len(all))
+	for idStr, org := range all {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+		docs = append(docs, org)
+	}
+	return ids, docs, nil
+}
+
 // --- Helper: parse UUID from potentially invalid strings ---
 
 func ParseUUIDsFromStrings(values []string) []uuid.UUID {

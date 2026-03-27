@@ -66,6 +66,24 @@ flowchart LR
     S04 -->|"新規作成"| S04
 ```
 
+## 4.1. 月次発行フロー（CronJob）
+
+毎月1日にCronJobが実行され、2ヶ月先の月のワークフロー期間を自動プロビジョニングする。
+
+例: 12月1日に実行 → 2月分のワークフロー期間（定例・作成・広報ページ）が生成される。
+
+```mermaid
+flowchart TD
+    Cron["CronJob（毎月1日）"] -->|"現在月+2を計算"| Provision["ProvisionWorkflowPeriod"]
+    Provision --> Meeting["Meeting作成（planned）"]
+    Provision --> Announcement["Announcement作成（draft）"]
+    Meeting --> Sidebar["サイドバーに月が表示"]
+    Announcement --> Sidebar
+```
+
+サイドバーの月リストは `GET /api/v1/workflow-periods` から動的に取得される。
+ユーザーは月を選択して、各月の定例・作成・広報を管理できる。
+
 ## 5. 状態別分岐（State-based Flow）
 
 ```mermaid

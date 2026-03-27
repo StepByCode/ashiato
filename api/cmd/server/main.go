@@ -144,7 +144,7 @@ func main() {
 	})
 
 	httpServer := &http.Server{
-		Addr:              fmt.Sprintf(":%s", cfg.Port),
+		Addr:              fmt.Sprintf("0.0.0.0:%s", cfg.Port),
 		Handler:           e,
 		ReadHeaderTimeout: 10 * time.Second,
 	}

@@ -37,9 +37,17 @@ func main() {
 
 	logger := logging.NewLogger()
 
-	// Initialize Firebase App with credentials JSON from environment variable.
-	opt := option.WithCredentialsJSON([]byte(cfg.FirebaseCredentialsJSON))
-	fbApp, err := firebase.NewApp(ctx, nil, opt)
+	// Initialize Firebase App.
+	// Use explicit credentials JSON when provided; otherwise fall back to
+	// Application Default Credentials (ADC) available in GCP environments.
+	var fbApp *firebase.App
+	if cfg.FirebaseCredentialsJSON != "" {
+		opt := option.WithCredentialsJSON([]byte(cfg.FirebaseCredentialsJSON))
+		fbApp, err = firebase.NewApp(ctx, nil, opt)
+	} else {
+		logger.Info("FIREBASE_CREDENTIALS_JSON not set; using Application Default Credentials")
+		fbApp, err = firebase.NewApp(ctx, nil)
+	}
 	if err != nil {
 		logger.Error("failed to initialize Firebase app", slog.Any("error", err))
 		os.Exit(1)

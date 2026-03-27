@@ -35,8 +35,6 @@ func Load() (Config, error) {
 	}
 
 	switch {
-	case cfg.FirebaseCredentialsJSON == "":
-		return Config{}, errors.New("FIREBASE_CREDENTIALS_JSON is required")
 	case cfg.FirebaseDatabaseURL == "":
 		return Config{}, errors.New("FIREBASE_DATABASE_URL is required")
 	case cfg.DiscordWebhookURL == "":

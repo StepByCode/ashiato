@@ -124,6 +124,9 @@ export function TaskBoard() {
           return (
             <Card
               key={task.id}
+              data-testid="task-card"
+              data-task-id={task.id}
+              data-task-title={task.title}
               className={cn("overflow-hidden rounded-[1.75rem] border-2 shadow-sm", taskStateMeta.cardClassName)}
             >
               <CardContent className="space-y-5 p-5 sm:p-6">
@@ -158,6 +161,7 @@ export function TaskBoard() {
                         <Button
                           type="button"
                           variant={isApproved ? "secondary" : "default"}
+                          data-testid="approve-button"
                           className={cn(
                             "min-h-12 w-full rounded-full px-5 text-base font-semibold shadow-sm",
                             isApproved && "bg-emerald-100 text-emerald-900 hover:bg-emerald-100"
@@ -185,6 +189,7 @@ export function TaskBoard() {
                               </Button>
                               <Button
                                 type="button"
+                                data-testid="approve-confirm-yes"
                                 className="h-10 rounded-full px-4 text-sm font-semibold"
                                 onClick={() => runPendingAction(task.id, "approve")}
                               >
@@ -199,6 +204,7 @@ export function TaskBoard() {
                         <Button
                           type="button"
                           variant={isDoneLike ? "secondary" : "default"}
+                          data-testid="state-toggle-button"
                           className="min-h-12 w-full rounded-full px-5 text-base font-semibold shadow-sm"
                           onClick={() => {
                             if (isDoneLike) {
@@ -226,6 +232,7 @@ export function TaskBoard() {
                               </Button>
                               <Button
                                 type="button"
+                                data-testid="state-confirm-yes"
                                 className="h-10 rounded-full px-4 text-sm font-semibold"
                                 onClick={() =>
                                   runPendingAction(

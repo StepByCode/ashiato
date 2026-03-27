@@ -41,6 +41,12 @@ frontend/
 - `task-store.ts`: 作成タスクボードのローカルデモ状態
 - store はクライアントコンポーネントから selector で参照し、UI 固有の一時状態は各コンポーネント内に持つ
 
+## E2E テスト（Playwright）
+
+- ルートに `playwright.config.ts` を置き、`tests/e2e` 配下にシナリオを追加する
+- ローカル実行: `npm run test:e2e`（`npm run dev` を自動起動）
+- テスト前に `localStorage` をクリアしてローカル状態を再現性ある形で検証する
+
 ## 実装方針
 
 - 画面遷移は `doc/03_screen-flow.md` を正とする

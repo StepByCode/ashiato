@@ -8,20 +8,20 @@ import (
 
 type Config struct {
 	FirebaseCredentialsJSON string
+	DiscordWebhookURL       string
 	DefaultOrgName          string
 	DefaultOrgSlug          string
 	OwnerEmails             map[string]struct{}
-	BotSharedToken          string
 	Port                    string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
 		FirebaseCredentialsJSON: strings.TrimSpace(os.Getenv("FIREBASE_CREDENTIALS_JSON")),
+		DiscordWebhookURL:       strings.TrimSpace(os.Getenv("DISCORD_WEBHOOK_URL")),
 		DefaultOrgName:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_NAME")),
 		DefaultOrgSlug:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
 		OwnerEmails:             parseOwnerEmails(strings.TrimSpace(os.Getenv("OWNER_EMAILS"))),
-		BotSharedToken:          strings.TrimSpace(os.Getenv("BOT_SHARED_TOKEN")),
 		Port:                    defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
 	}
 
@@ -35,8 +35,8 @@ func Load() (Config, error) {
 	switch {
 	case cfg.FirebaseCredentialsJSON == "":
 		return Config{}, errors.New("FIREBASE_CREDENTIALS_JSON is required")
-	case cfg.BotSharedToken == "":
-		return Config{}, errors.New("BOT_SHARED_TOKEN is required")
+	case cfg.DiscordWebhookURL == "":
+		return Config{}, errors.New("DISCORD_WEBHOOK_URL is required")
 	}
 
 	return cfg, nil

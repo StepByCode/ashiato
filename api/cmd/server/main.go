@@ -18,6 +18,7 @@ import (
 
 	"github.com/dokkiitech/ashiato/api/internal/auth"
 	"github.com/dokkiitech/ashiato/api/internal/config"
+	"github.com/dokkiitech/ashiato/api/internal/discord"
 	"github.com/dokkiitech/ashiato/api/internal/handler"
 	"github.com/dokkiitech/ashiato/api/internal/logging"
 	"github.com/dokkiitech/ashiato/api/internal/oapi"
@@ -61,9 +62,10 @@ func main() {
 	logger.Info("firebase initialized (auth + firestore)")
 
 	store := repository.New(fsClient)
+	webhook := discord.NewWebhookClient(cfg.DiscordWebhookURL)
 	verifier := auth.NewFirebaseVerifier(authClient)
-	service := usecase.NewService(store, logger, cfg)
-	authenticator := auth.NewAuthenticator(verifier, service, cfg.BotSharedToken)
+	service := usecase.NewService(store, webhook, logger, cfg)
+	authenticator := auth.NewAuthenticator(verifier, service)
 	server := handler.NewServer(service)
 
 	e := echo.New()

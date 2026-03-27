@@ -23,7 +23,6 @@ type Syncer interface {
 type Authenticator struct {
 	verifier Verifier
 	syncer   Syncer
-	botToken string
 }
 
 type firebaseVerifier struct {
@@ -64,8 +63,8 @@ func (f *firebaseVerifier) Verify(ctx context.Context, rawToken string) (domain.
 	}, nil
 }
 
-func NewAuthenticator(verifier Verifier, syncer Syncer, botToken string) *Authenticator {
-	return &Authenticator{verifier: verifier, syncer: syncer, botToken: botToken}
+func NewAuthenticator(verifier Verifier, syncer Syncer) *Authenticator {
+	return &Authenticator{verifier: verifier, syncer: syncer}
 }
 
 // isSimpleAPIPath returns true for endpoints defined in docs/backend-api-request.md
@@ -98,8 +97,6 @@ func (a *Authenticator) Middleware() echo.MiddlewareFunc {
 			switch {
 			case isSimpleAPIPath(requestPath):
 				return next(c)
-			case strings.HasPrefix(requestPath, "/internal/"):
-				return a.authorizeBot(next, c)
 			case strings.HasPrefix(requestPath, "/api/"):
 				return a.authorizeUser(next, c)
 			default:
@@ -144,16 +141,5 @@ func (a *Authenticator) authorizeUser(next echo.HandlerFunc, c echo.Context) err
 
 	ctx := appctx.WithActor(c.Request().Context(), actor)
 	c.SetRequest(c.Request().WithContext(ctx))
-	return next(c)
-}
-
-func (a *Authenticator) authorizeBot(next echo.HandlerFunc, c echo.Context) error {
-	received := c.Request().Header.Get("X-Bot-Token")
-	if received == "" || received != a.botToken {
-		return c.JSON(http.StatusUnauthorized, map[string]string{
-			"code":    "unauthorized",
-			"message": "invalid bot token",
-		})
-	}
 	return next(c)
 }

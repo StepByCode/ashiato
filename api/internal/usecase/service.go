@@ -12,6 +12,7 @@ import (
 
 	"github.com/dokkiitech/ashiato/api/internal/audit"
 	"github.com/dokkiitech/ashiato/api/internal/config"
+	"github.com/dokkiitech/ashiato/api/internal/discord"
 	"github.com/dokkiitech/ashiato/api/internal/domain"
 	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 	"github.com/dokkiitech/ashiato/api/internal/repository"
@@ -19,6 +20,7 @@ import (
 
 type Service struct {
 	store       *repository.Store
+	webhook     *discord.WebhookClient
 	logger      *slog.Logger
 	defaultName string
 	defaultSlug string
@@ -68,9 +70,10 @@ type PublishAnnouncementInput struct {
 	PublishChannel string
 }
 
-func NewService(store *repository.Store, logger *slog.Logger, cfg config.Config) *Service {
+func NewService(store *repository.Store, webhook *discord.WebhookClient, logger *slog.Logger, cfg config.Config) *Service {
 	return &Service{
 		store:       store,
+		webhook:     webhook,
 		logger:      logger,
 		defaultName: cfg.DefaultOrgName,
 		defaultSlug: cfg.DefaultOrgSlug,
@@ -480,82 +483,50 @@ func (s *Service) PublishAnnouncement(ctx context.Context, actor domain.Actor, i
 		return domain.Announcement{}, toAppError("announcement not found", err)
 	}
 	before := announcementFromDoc(input.ID, beforeDoc)
-	if before.Status == domain.AnnouncementStatusPublishRequested {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeConflict, "announcement publish already requested", nil)
+	if before.Status == domain.AnnouncementStatusPublished {
+		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeConflict, "announcement already published", nil)
 	}
 
-	id, doc, err := s.store.RequestAnnouncementPublish(ctx, actor.OrganizationID, input.ID, &input.PublishChannel, actor.UserID.String())
+	// Send to Discord via Webhook.
+	discordMessageID, err := s.webhook.Send(ctx, before.Body)
 	if err != nil {
-		return domain.Announcement{}, toAppError("failed to request announcement publish", err)
-	}
-
-	result := announcementFromDoc(id, doc)
-	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "announcement.publish_request", "announcement", result.ID, before, result); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	return result, nil
-}
-
-func (s *Service) ListPublishRequests(ctx context.Context) ([]domain.PublishRequest, error) {
-	ids, docs, err := s.store.ListPendingPublishRequests(ctx)
-	if err != nil {
-		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list publish requests", err)
-	}
-
-	requests := make([]domain.PublishRequest, 0, len(docs))
-	for i, doc := range docs {
-		if doc.PublishChannel == nil {
-			continue
+		s.logger.Error("discord webhook failed", "error", err, "announcement_id", input.ID)
+		// Mark as failed.
+		_, failDoc, failErr := s.store.FailAnnouncementPublish(ctx, input.ID, err.Error())
+		if failErr != nil {
+			return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to send to discord and failed to record error", err)
 		}
-		requests = append(requests, domain.PublishRequest{
-			AnnouncementID: ids[i],
-			Year:           doc.Year,
-			Month:          doc.Month,
-			Body:           doc.Body,
-			PublishChannel: *doc.PublishChannel,
-		})
+		result := announcementFromDoc(input.ID, failDoc)
+		_ = audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "announcement.publish_fail", "announcement", result.ID, before, result)
+		return result, domain.NewAppError(domain.ErrorCodeInternal, "failed to send to discord: "+err.Error(), err)
 	}
-	return requests, nil
-}
 
-func (s *Service) CompletePublishRequest(ctx context.Context, id uuid.UUID, discordMessageID string) (domain.Announcement, error) {
-	beforeDoc, err := s.store.GetAnnouncementByID(ctx, id)
+	// Mark as published with the Discord message ID.
+	_, doc, err := s.store.CompleteAnnouncementPublish(ctx, input.ID, discordMessageID)
 	if err != nil {
-		return domain.Announcement{}, toAppError("announcement not found", err)
-	}
-	before := announcementFromDoc(id, beforeDoc)
-
-	_, doc, err := s.store.CompleteAnnouncementPublish(ctx, id, discordMessageID)
-	if err != nil {
-		return domain.Announcement{}, toAppError("announcement not found", err)
+		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "discord message sent but failed to update status", err)
 	}
 
-	result := announcementFromDoc(id, doc)
-	orgID, _ := uuid.Parse(doc.OrganizationID)
-	if err := audit.WriteService(ctx, s.store, orgID, "discord-bot", appctx.RequestIPFromContext(ctx), "announcement.publish_complete", "announcement", result.ID, before, result); err != nil {
+	result := announcementFromDoc(input.ID, doc)
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "announcement.publish", "announcement", result.ID, before, result); err != nil {
 		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
 	}
 	return result, nil
 }
 
-func (s *Service) FailPublishRequest(ctx context.Context, id uuid.UUID, failure string) (domain.Announcement, error) {
-	beforeDoc, err := s.store.GetAnnouncementByID(ctx, id)
-	if err != nil {
-		return domain.Announcement{}, toAppError("announcement not found", err)
-	}
-	before := announcementFromDoc(id, beforeDoc)
+// ListPublishRequests is kept for OpenAPI interface compatibility but returns empty.
+func (s *Service) ListPublishRequests(_ context.Context) ([]domain.PublishRequest, error) {
+	return []domain.PublishRequest{}, nil
+}
 
-	_, doc, err := s.store.FailAnnouncementPublish(ctx, id, failure)
-	if err != nil {
-		return domain.Announcement{}, toAppError("announcement not found", err)
-	}
+// CompletePublishRequest is kept for OpenAPI interface compatibility but returns not found.
+func (s *Service) CompletePublishRequest(_ context.Context, _ uuid.UUID, _ string) (domain.Announcement, error) {
+	return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeNotFound, "internal endpoints are deprecated; use webhook", nil)
+}
 
-	result := announcementFromDoc(id, doc)
-	orgID, _ := uuid.Parse(doc.OrganizationID)
-	if err := audit.WriteService(ctx, s.store, orgID, "discord-bot", appctx.RequestIPFromContext(ctx), "announcement.publish_fail", "announcement", result.ID, before, result); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	return result, nil
+// FailPublishRequest is kept for OpenAPI interface compatibility but returns not found.
+func (s *Service) FailPublishRequest(_ context.Context, _ uuid.UUID, _ string) (domain.Announcement, error) {
+	return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeNotFound, "internal endpoints are deprecated; use webhook", nil)
 }
 
 // --- internal helpers ---

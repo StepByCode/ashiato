@@ -48,7 +48,7 @@
 
 | # | タイトル | 工数 | 優先度 | 担当 | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| C-3 | OIDC基盤（ZITADEL） | L | 🔴 P0 | A | 認証基盤 |
+| C-3 | OIDC基盤（Pocket ID） | L | 🔴 P0 | A | 認証基盤 |
 | C-1 | Frontendサービス初期構築 | M | 🟡 P1 | B | Vercel |
 | C-2 | APIサービス初期構築 | M | 🟡 P1 | A | Coolify |
 

@@ -30,7 +30,7 @@ flowchart LR
     end
 
     subgraph IDENTITY["Identity Layer"]
-        IDP["ZITADEL Selfhosted<br/>(OIDC)"]:::svc
+        IDP["Pocket ID Selfhosted<br/>(OIDC)"]:::svc
     end
 
     subgraph DATA["Data Layer"]
@@ -99,7 +99,7 @@ flowchart LR
 
 ### 3. Identity Layer
 
-- ZITADEL Selfhosted（OIDC）
+- Pocket ID Selfhosted（OIDC）
 - JWT発行とユーザー同定
 - 将来のIdP差し替えを想定した分離
 

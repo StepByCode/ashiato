@@ -3,19 +3,16 @@ package usecase
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/dokkiitech/ashiato/api/internal/audit"
 	"github.com/dokkiitech/ashiato/api/internal/config"
-	"github.com/dokkiitech/ashiato/api/internal/db"
+	"github.com/dokkiitech/ashiato/api/internal/discord"
 	"github.com/dokkiitech/ashiato/api/internal/domain"
 	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 	"github.com/dokkiitech/ashiato/api/internal/repository"
@@ -23,6 +20,7 @@ import (
 
 type Service struct {
 	store       *repository.Store
+	webhook     *discord.WebhookClient
 	logger      *slog.Logger
 	defaultName string
 	defaultSlug string
@@ -72,9 +70,10 @@ type PublishAnnouncementInput struct {
 	PublishChannel string
 }
 
-func NewService(store *repository.Store, logger *slog.Logger, cfg config.Config) *Service {
+func NewService(store *repository.Store, webhook *discord.WebhookClient, logger *slog.Logger, cfg config.Config) *Service {
 	return &Service{
 		store:       store,
+		webhook:     webhook,
 		logger:      logger,
 		defaultName: cfg.DefaultOrgName,
 		defaultSlug: cfg.DefaultOrgSlug,
@@ -83,21 +82,13 @@ func NewService(store *repository.Store, logger *slog.Logger, cfg config.Config)
 }
 
 func (s *Service) SyncPrincipal(ctx context.Context, principal domain.Principal) (domain.Actor, error) {
-	q := s.store.Queries()
-
-	org, err := q.EnsureOrganization(ctx, db.EnsureOrganizationParams{
-		Slug: s.defaultSlug,
-		Name: s.defaultName,
-	})
+	orgID, org, err := s.store.EnsureOrganization(ctx, s.defaultSlug, s.defaultName)
 	if err != nil {
 		return domain.Actor{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to ensure organization", err)
 	}
+	_ = org
 
-	user, err := q.UpsertUser(ctx, db.UpsertUserParams{
-		OidcSubject: principal.Subject,
-		Email:       principal.Email,
-		Name:        principal.Name,
-	})
+	userID, user, err := s.store.UpsertUser(ctx, principal.Subject, principal.Email, principal.Name)
 	if err != nil {
 		return domain.Actor{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to upsert user", err)
 	}
@@ -107,67 +98,52 @@ func (s *Service) SyncPrincipal(ctx context.Context, principal domain.Principal)
 		role = domain.RoleOwner
 	}
 
-	member, err := q.EnsureOrganizationMembership(ctx, db.EnsureOrganizationMembershipParams{
-		OrganizationID: org.ID,
-		UserID:         user.ID,
-		Role:           role,
-	})
+	member, err := s.store.EnsureOrganizationMembership(ctx, orgID, userID, role)
 	if err != nil {
 		return domain.Actor{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to ensure membership", err)
 	}
 
 	return domain.Actor{
-		UserID:         uuidFromPG(user.ID),
-		OrganizationID: uuidFromPG(org.ID),
+		UserID:         userID,
+		OrganizationID: orgID,
 		Role:           member.Role,
-		Subject:        user.OidcSubject,
+		Subject:        user.OIDCSubject,
 		Email:          user.Email,
 		Name:           user.Name,
 	}, nil
 }
 
 func (s *Service) GetMe(ctx context.Context, actor domain.Actor) (domain.Actor, domain.Organization, error) {
-	org, err := s.store.Queries().GetOrganizationByID(ctx, pgUUID(actor.OrganizationID))
+	org, err := s.store.GetOrganizationByID(ctx, actor.OrganizationID)
 	if err != nil {
 		return domain.Actor{}, domain.Organization{}, toAppError("organization not found", err)
 	}
 
 	return actor, domain.Organization{
-		ID:   uuidFromPG(org.ID),
+		ID:   actor.OrganizationID,
 		Slug: org.Slug,
 		Name: org.Name,
 	}, nil
 }
 
 func (s *Service) ListMembers(ctx context.Context, actor domain.Actor) ([]domain.Member, error) {
-	rows, err := s.store.Queries().ListOrganizationMembers(ctx, pgUUID(actor.OrganizationID))
+	members, err := s.store.ListOrganizationMembers(ctx, actor.OrganizationID)
 	if err != nil {
 		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list members", err)
-	}
-
-	members := make([]domain.Member, 0, len(rows))
-	for _, row := range rows {
-		members = append(members, domain.Member{
-			ID:    uuidFromPG(row.ID),
-			Email: row.Email,
-			Name:  row.Name,
-			Role:  row.Role,
-		})
 	}
 	return members, nil
 }
 
 func (s *Service) ListWorkflowPeriods(ctx context.Context, actor domain.Actor) ([]domain.WorkflowPeriod, error) {
-	q := s.store.Queries()
-	meetings, err := q.ListMeetingPeriods(ctx, pgUUID(actor.OrganizationID))
+	meetings, err := s.store.ListMeetingPeriods(ctx, actor.OrganizationID)
 	if err != nil {
 		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list meeting periods", err)
 	}
-	tasks, err := q.ListTaskPeriodSummaries(ctx, pgUUID(actor.OrganizationID))
+	taskSummaries, err := s.store.ListTaskPeriodSummaries(ctx, actor.OrganizationID)
 	if err != nil {
 		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list task periods", err)
 	}
-	announcements, err := q.ListAnnouncementPeriods(ctx, pgUUID(actor.OrganizationID))
+	announcements, err := s.store.ListAnnouncementPeriods(ctx, actor.OrganizationID)
 	if err != nil {
 		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list announcement periods", err)
 	}
@@ -199,7 +175,7 @@ func (s *Service) ListWorkflowPeriods(ctx context.Context, actor domain.Actor) (
 		period.MeetingStatus = row.Status
 	}
 
-	for _, row := range tasks {
+	for _, row := range taskSummaries {
 		period := getPeriod(row.Year, row.Month)
 		switch {
 		case row.TaskCount == 0:
@@ -234,15 +210,11 @@ func (s *Service) ListWorkflowPeriods(ctx context.Context, actor domain.Actor) (
 }
 
 func (s *Service) GetMeeting(ctx context.Context, actor domain.Actor, year, month int32) (domain.Meeting, error) {
-	row, err := s.store.Queries().GetMeetingByPeriod(ctx, db.GetMeetingByPeriodParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		Year:           year,
-		Month:          month,
-	})
+	id, doc, err := s.store.GetMeetingByPeriod(ctx, actor.OrganizationID, year, month)
 	if err != nil {
 		return domain.Meeting{}, toAppError("meeting not found", err)
 	}
-	return meetingFromDB(row), nil
+	return meetingFromDoc(id, doc), nil
 }
 
 func (s *Service) PutMeeting(ctx context.Context, actor domain.Actor, input PutMeetingInput) (domain.Meeting, error) {
@@ -253,44 +225,22 @@ func (s *Service) PutMeeting(ctx context.Context, actor domain.Actor, input PutM
 		return domain.Meeting{}, err
 	}
 
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.Meeting{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
 	var before any
-	existing, err := q.GetMeetingByPeriod(ctx, db.GetMeetingByPeriodParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		Year:           input.Year,
-		Month:          input.Month,
-	})
+	existingID, existingDoc, err := s.store.GetMeetingByPeriod(ctx, actor.OrganizationID, input.Year, input.Month)
 	if err == nil {
-		before = meetingFromDB(existing)
-	} else if !errors.Is(err, pgx.ErrNoRows) {
+		before = meetingFromDoc(existingID, existingDoc)
+	} else if !errors.Is(err, repository.ErrNotFound) {
 		return domain.Meeting{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to load meeting", err)
 	}
 
-	row, err := q.UpsertMeeting(ctx, db.UpsertMeetingParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		Year:           input.Year,
-		Month:          input.Month,
-		ScheduledAt:    timestamptz(input.ScheduledAt),
-		MeetingUrl:     text(input.MeetingURL),
-		Notes:          text(input.Notes),
-		Status:         input.Status,
-		UpdatedBy:      pgUUID(actor.UserID),
-	})
+	id, doc, err := s.store.UpsertMeeting(ctx, actor.OrganizationID, input.Year, input.Month, input.ScheduledAt, input.MeetingURL, input.Notes, input.Status, actor.UserID.String())
 	if err != nil {
 		return domain.Meeting{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to upsert meeting", err)
 	}
 
-	result := meetingFromDB(row)
-	if err := audit.WriteUser(ctx, q, actor, appctx.RequestIPFromContext(ctx), "meeting.upsert", "meeting", result.ID, before, result); err != nil {
+	result := meetingFromDoc(id, doc)
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "meeting.upsert", "meeting", result.ID, before, result); err != nil {
 		return domain.Meeting{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Meeting{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to commit meeting", err)
 	}
 	return result, nil
 }
@@ -300,16 +250,11 @@ func (s *Service) ListTasks(ctx context.Context, actor domain.Actor, year, month
 		return nil, err
 	}
 
-	q := s.store.Queries()
-	rows, err := q.ListTasksByPeriod(ctx, db.ListTasksByPeriodParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		Year:           year,
-		Month:          month,
-	})
+	ids, docs, err := s.store.ListTasksByPeriod(ctx, actor.OrganizationID, year, month)
 	if err != nil {
 		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list tasks", err)
 	}
-	return s.attachApprovals(ctx, q, rows)
+	return s.attachApprovals(ctx, ids, docs)
 }
 
 func (s *Service) CreateTask(ctx context.Context, actor domain.Actor, input CreateTaskInput) (domain.Task, error) {
@@ -325,48 +270,47 @@ func (s *Service) CreateTask(ctx context.Context, actor domain.Actor, input Crea
 		return domain.Task{}, err
 	}
 
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
-	if err := ensureMembers(ctx, q, actor.OrganizationID, approverIDs); err != nil {
+	if err := s.ensureMembers(ctx, actor.OrganizationID, approverIDs); err != nil {
 		return domain.Task{}, err
 	}
-	if err := ensureOptionalMember(ctx, q, actor.OrganizationID, input.AssigneeID); err != nil {
+	if err := s.ensureOptionalMember(ctx, actor.OrganizationID, input.AssigneeID); err != nil {
 		return domain.Task{}, err
 	}
 
-	row, err := q.CreateTask(ctx, db.CreateTaskParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
+	var assigneeIDStr *string
+	if input.AssigneeID != nil {
+		s := input.AssigneeID.String()
+		assigneeIDStr = &s
+	}
+
+	taskDoc := repository.TaskDoc{
+		OrganizationID: actor.OrganizationID.String(),
 		Year:           input.Year,
 		Month:          input.Month,
 		Title:          input.Title,
 		Status:         input.Status,
-		DueDate:        date(input.DueDate),
-		ReferenceUrl:   text(input.ReferenceURL),
-		AssigneeID:     uuidPtr(input.AssigneeID),
-		CreatedBy:      pgUUID(actor.UserID),
-	})
+		DueDate:        input.DueDate,
+		ReferenceURL:   input.ReferenceURL,
+		AssigneeID:     assigneeIDStr,
+		CreatedBy:      actor.UserID.String(),
+	}
+
+	taskID, _, err := s.store.CreateTask(ctx, taskDoc)
 	if err != nil {
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to create task", err)
 	}
 
-	if err := upsertTaskApprovals(ctx, q, uuidFromPG(row.ID), nil, approverIDs); err != nil {
-		return domain.Task{}, err
+	if err := s.store.ReplaceTaskApprovals(ctx, taskID, nil, approverIDs); err != nil {
+		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to create task approvals", err)
 	}
 
-	task, err := s.loadTask(ctx, q, actor.OrganizationID, uuidFromPG(row.ID))
+	task, err := s.loadTask(ctx, actor.OrganizationID, taskID)
 	if err != nil {
 		return domain.Task{}, err
 	}
 
-	if err := audit.WriteUser(ctx, q, actor, appctx.RequestIPFromContext(ctx), "task.create", "task", task.ID, nil, task); err != nil {
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "task.create", "task", task.ID, nil, task); err != nil {
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to commit task", err)
 	}
 	return task, nil
 }
@@ -381,68 +325,45 @@ func (s *Service) UpdateTask(ctx context.Context, actor domain.Actor, input Upda
 		return domain.Task{}, err
 	}
 
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
-	before, err := s.loadTask(ctx, q, actor.OrganizationID, input.ID)
+	before, err := s.loadTask(ctx, actor.OrganizationID, input.ID)
 	if err != nil {
 		return domain.Task{}, err
 	}
 
-	if err := ensureMembers(ctx, q, actor.OrganizationID, approverIDs); err != nil {
+	if err := s.ensureMembers(ctx, actor.OrganizationID, approverIDs); err != nil {
 		return domain.Task{}, err
 	}
-	if err := ensureOptionalMember(ctx, q, actor.OrganizationID, input.AssigneeID); err != nil {
+	if err := s.ensureOptionalMember(ctx, actor.OrganizationID, input.AssigneeID); err != nil {
 		return domain.Task{}, err
 	}
 
-	updatedRow, err := q.UpdateTask(ctx, db.UpdateTaskParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		ID:             pgUUID(input.ID),
-		Title:          input.Title,
-		Status:         input.Status,
-		DueDate:        date(input.DueDate),
-		ReferenceUrl:   text(input.ReferenceURL),
-		AssigneeID:     uuidPtr(input.AssigneeID),
-		Version:        input.Version,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.Task{}, domain.NewAppError(domain.ErrorCodeConflict, "task version conflict", err)
-		}
-		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to update task", err)
+	if _, err := s.store.UpdateTask(ctx, actor.OrganizationID, input.ID, input.Title, input.Status, input.DueDate, input.ReferenceURL, input.AssigneeID, input.Version); err != nil {
+		return domain.Task{}, toAppError("failed to update task", err)
 	}
 
-	existingApprovals, err := q.ListTaskApprovalsByTaskID(ctx, pgUUID(input.ID))
+	existingApprovals, err := s.store.ListTaskApprovals(ctx, input.ID)
 	if err != nil {
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to load task approvals", err)
 	}
 	approvedMap := map[uuid.UUID]*time.Time{}
 	for _, approval := range existingApprovals {
-		approverID := uuidFromPG(approval.ApproverUserID)
-		if approval.ApprovedAt.Valid {
-			approvedAt := approval.ApprovedAt.Time
-			approvedMap[approverID] = &approvedAt
+		approverID, _ := uuid.Parse(approval.ApproverUserID)
+		if approval.ApprovedAt != nil {
+			approvedMap[approverID] = approval.ApprovedAt
 		}
 	}
 
-	if err := upsertTaskApprovals(ctx, q, uuidFromPG(updatedRow.ID), approvedMap, approverIDs); err != nil {
-		return domain.Task{}, err
+	if err := s.store.ReplaceTaskApprovals(ctx, input.ID, approvedMap, approverIDs); err != nil {
+		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to update task approvals", err)
 	}
 
-	after, err := s.loadTask(ctx, q, actor.OrganizationID, input.ID)
+	after, err := s.loadTask(ctx, actor.OrganizationID, input.ID)
 	if err != nil {
 		return domain.Task{}, err
 	}
 
-	if err := audit.WriteUser(ctx, q, actor, appctx.RequestIPFromContext(ctx), "task.update", "task", after.ID, before, after); err != nil {
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "task.update", "task", after.ID, before, after); err != nil {
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to commit task", err)
 	}
 	return after, nil
 }
@@ -452,46 +373,24 @@ func (s *Service) DeleteTask(ctx context.Context, actor domain.Actor, id uuid.UU
 		return domain.NewAppError(domain.ErrorCodeForbidden, "write access denied", nil)
 	}
 
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
-	before, err := s.loadTask(ctx, q, actor.OrganizationID, id)
+	before, err := s.loadTask(ctx, actor.OrganizationID, id)
 	if err != nil {
 		return err
 	}
 
-	if _, err := q.DeleteTask(ctx, db.DeleteTaskParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		ID:             pgUUID(id),
-		Version:        version,
-	}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.NewAppError(domain.ErrorCodeConflict, "task version conflict", err)
-		}
-		return domain.NewAppError(domain.ErrorCodeInternal, "failed to delete task", err)
+	if err := s.store.DeleteTask(ctx, actor.OrganizationID, id, version); err != nil {
+		return toAppError("failed to delete task", err)
 	}
 
 	after := map[string]any{"id": id.String(), "deleted": true}
-	if err := audit.WriteUser(ctx, q, actor, appctx.RequestIPFromContext(ctx), "task.delete", "task", id, before, after); err != nil {
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "task.delete", "task", id, before, after); err != nil {
 		return domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.NewAppError(domain.ErrorCodeInternal, "failed to commit delete", err)
 	}
 	return nil
 }
 
 func (s *Service) ApproveTask(ctx context.Context, actor domain.Actor, id uuid.UUID) (domain.Task, error) {
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
-	before, err := s.loadTask(ctx, q, actor.OrganizationID, id)
+	before, err := s.loadTask(ctx, actor.OrganizationID, id)
 	if err != nil {
 		return domain.Task{}, err
 	}
@@ -499,18 +398,19 @@ func (s *Service) ApproveTask(ctx context.Context, actor domain.Actor, id uuid.U
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeConflict, "task must be done before approval", nil)
 	}
 
-	approvalRows, err := q.ListTaskApprovalsByTaskID(ctx, pgUUID(id))
+	approvalRows, err := s.store.ListTaskApprovals(ctx, id)
 	if err != nil {
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to load task approvals", err)
 	}
 
 	found := false
 	for _, approval := range approvalRows {
-		if uuidFromPG(approval.ApproverUserID) != actor.UserID {
+		approverID, _ := uuid.Parse(approval.ApproverUserID)
+		if approverID != actor.UserID {
 			continue
 		}
 		found = true
-		if approval.ApprovedAt.Valid {
+		if approval.ApprovedAt != nil {
 			return domain.Task{}, domain.NewAppError(domain.ErrorCodeConflict, "task already approved by this approver", nil)
 		}
 		break
@@ -519,40 +419,27 @@ func (s *Service) ApproveTask(ctx context.Context, actor domain.Actor, id uuid.U
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeForbidden, "user is not an approver for this task", nil)
 	}
 
-	if _, err := q.ApproveTask(ctx, db.ApproveTaskParams{
-		TaskID:         pgUUID(id),
-		ApproverUserID: pgUUID(actor.UserID),
-	}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.Task{}, domain.NewAppError(domain.ErrorCodeConflict, "task already approved", err)
-		}
-		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to approve task", err)
+	if err := s.store.ApproveTask(ctx, id, actor.UserID); err != nil {
+		return domain.Task{}, toAppError("failed to approve task", err)
 	}
 
-	after, err := s.loadTask(ctx, q, actor.OrganizationID, id)
+	after, err := s.loadTask(ctx, actor.OrganizationID, id)
 	if err != nil {
 		return domain.Task{}, err
 	}
 
-	if err := audit.WriteUser(ctx, q, actor, appctx.RequestIPFromContext(ctx), "task.approve", "task", id, before, after); err != nil {
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "task.approve", "task", id, before, after); err != nil {
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to commit approval", err)
 	}
 	return after, nil
 }
 
 func (s *Service) GetAnnouncement(ctx context.Context, actor domain.Actor, year, month int32) (domain.Announcement, error) {
-	row, err := s.store.Queries().GetAnnouncementByPeriod(ctx, db.GetAnnouncementByPeriodParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		Year:           year,
-		Month:          month,
-	})
+	id, doc, err := s.store.GetAnnouncementByPeriod(ctx, actor.OrganizationID, year, month)
 	if err != nil {
 		return domain.Announcement{}, toAppError("announcement not found", err)
 	}
-	return announcementFromDB(row), nil
+	return announcementFromDoc(id, doc), nil
 }
 
 func (s *Service) PutAnnouncement(ctx context.Context, actor domain.Actor, input PutAnnouncementInput) (domain.Announcement, error) {
@@ -563,42 +450,22 @@ func (s *Service) PutAnnouncement(ctx context.Context, actor domain.Actor, input
 		return domain.Announcement{}, err
 	}
 
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
 	var before any
-	existing, err := q.GetAnnouncementByPeriod(ctx, db.GetAnnouncementByPeriodParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		Year:           input.Year,
-		Month:          input.Month,
-	})
+	existingID, existingDoc, err := s.store.GetAnnouncementByPeriod(ctx, actor.OrganizationID, input.Year, input.Month)
 	if err == nil {
-		before = announcementFromDB(existing)
-	} else if !errors.Is(err, pgx.ErrNoRows) {
+		before = announcementFromDoc(existingID, existingDoc)
+	} else if !errors.Is(err, repository.ErrNotFound) {
 		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to load announcement", err)
 	}
 
-	row, err := q.UpsertAnnouncementDraft(ctx, db.UpsertAnnouncementDraftParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		Year:           input.Year,
-		Month:          input.Month,
-		Body:           input.Body,
-		PublishChannel: text(input.PublishChannel),
-		UpdatedBy:      pgUUID(actor.UserID),
-	})
+	id, doc, err := s.store.UpsertAnnouncementDraft(ctx, actor.OrganizationID, input.Year, input.Month, input.Body, input.PublishChannel, actor.UserID.String())
 	if err != nil {
 		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to upsert announcement", err)
 	}
 
-	result := announcementFromDB(row)
-	if err := audit.WriteUser(ctx, q, actor, appctx.RequestIPFromContext(ctx), "announcement.upsert", "announcement", result.ID, before, result); err != nil {
+	result := announcementFromDoc(id, doc)
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "announcement.upsert", "announcement", result.ID, before, result); err != nil {
 		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to commit announcement", err)
 	}
 	return result, nil
 }
@@ -611,181 +478,92 @@ func (s *Service) PublishAnnouncement(ctx context.Context, actor domain.Actor, i
 		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeValidation, "publish_channel is required", nil)
 	}
 
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
-	beforeRow, err := q.GetAnnouncementByIDForOrg(ctx, db.GetAnnouncementByIDForOrgParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		ID:             pgUUID(input.ID),
-	})
+	_, beforeDoc, err := s.store.GetAnnouncementByIDForOrg(ctx, actor.OrganizationID, input.ID)
 	if err != nil {
 		return domain.Announcement{}, toAppError("announcement not found", err)
 	}
-	before := announcementFromDB(beforeRow)
-	if before.Status == domain.AnnouncementStatusPublishRequested {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeConflict, "announcement publish already requested", nil)
+	before := announcementFromDoc(input.ID, beforeDoc)
+	if before.Status == domain.AnnouncementStatusPublished {
+		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeConflict, "announcement already published", nil)
 	}
 
-	row, err := q.RequestAnnouncementPublish(ctx, db.RequestAnnouncementPublishParams{
-		OrganizationID: pgUUID(actor.OrganizationID),
-		ID:             pgUUID(input.ID),
-		PublishChannel: text(&input.PublishChannel),
-		UpdatedBy:      pgUUID(actor.UserID),
-	})
+	// Send to Discord via Webhook.
+	discordMessageID, err := s.webhook.Send(ctx, before.Body)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeNotFound, "announcement not found", err)
+		s.logger.Error("discord webhook failed", "error", err, "announcement_id", input.ID)
+		// Mark as failed.
+		_, failDoc, failErr := s.store.FailAnnouncementPublish(ctx, input.ID, err.Error())
+		if failErr != nil {
+			return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to send to discord and failed to record error", err)
 		}
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to request announcement publish", err)
+		result := announcementFromDoc(input.ID, failDoc)
+		_ = audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "announcement.publish_fail", "announcement", result.ID, before, result)
+		return result, domain.NewAppError(domain.ErrorCodeInternal, "failed to send to discord: "+err.Error(), err)
 	}
 
-	result := announcementFromDB(row)
-	if err := audit.WriteUser(ctx, q, actor, appctx.RequestIPFromContext(ctx), "announcement.publish_request", "announcement", result.ID, before, result); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
+	// Mark as published with the Discord message ID.
+	_, doc, err := s.store.CompleteAnnouncementPublish(ctx, input.ID, discordMessageID)
+	if err != nil {
+		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "discord message sent but failed to update status", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to commit publish request", err)
+
+	result := announcementFromDoc(input.ID, doc)
+	if err := audit.WriteUser(ctx, s.store, actor, appctx.RequestIPFromContext(ctx), "announcement.publish", "announcement", result.ID, before, result); err != nil {
+		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
 	}
 	return result, nil
 }
 
-func (s *Service) ListPublishRequests(ctx context.Context) ([]domain.PublishRequest, error) {
-	rows, err := s.store.Queries().ListPendingAnnouncementPublishRequests(ctx)
-	if err != nil {
-		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list publish requests", err)
-	}
-
-	requests := make([]domain.PublishRequest, 0, len(rows))
-	for _, row := range rows {
-		if !row.PublishChannel.Valid {
-			continue
-		}
-		requests = append(requests, domain.PublishRequest{
-			AnnouncementID: uuidFromPG(row.ID),
-			Year:           row.Year,
-			Month:          row.Month,
-			Body:           row.Body,
-			PublishChannel: row.PublishChannel.String,
-		})
-	}
-	return requests, nil
+// ListPublishRequests is kept for OpenAPI interface compatibility but returns empty.
+func (s *Service) ListPublishRequests(_ context.Context) ([]domain.PublishRequest, error) {
+	return []domain.PublishRequest{}, nil
 }
 
-func (s *Service) CompletePublishRequest(ctx context.Context, id uuid.UUID, discordMessageID string) (domain.Announcement, error) {
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
-	beforeRow, err := q.GetAnnouncementByID(ctx, pgUUID(id))
-	if err != nil {
-		return domain.Announcement{}, toAppError("announcement not found", err)
-	}
-	before := announcementFromDB(beforeRow)
-
-	row, err := q.CompleteAnnouncementPublish(ctx, db.CompleteAnnouncementPublishParams{
-		ID:               pgUUID(id),
-		DiscordMessageID: text(&discordMessageID),
-	})
-	if err != nil {
-		return domain.Announcement{}, toAppError("announcement not found", err)
-	}
-
-	result := announcementFromDB(row)
-	if err := audit.WriteService(ctx, q, uuidFromPG(row.OrganizationID), "discord-bot", appctx.RequestIPFromContext(ctx), "announcement.publish_complete", "announcement", result.ID, before, result); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to commit publish complete", err)
-	}
-	return result, nil
+// CompletePublishRequest is kept for OpenAPI interface compatibility but returns not found.
+func (s *Service) CompletePublishRequest(_ context.Context, _ uuid.UUID, _ string) (domain.Announcement, error) {
+	return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeNotFound, "internal endpoints are deprecated; use webhook", nil)
 }
 
-func (s *Service) FailPublishRequest(ctx context.Context, id uuid.UUID, failure string) (domain.Announcement, error) {
-	tx, q, err := s.store.Begin(ctx)
-	if err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to start transaction", err)
-	}
-	defer rollbackTx(ctx, tx)
-
-	beforeRow, err := q.GetAnnouncementByID(ctx, pgUUID(id))
-	if err != nil {
-		return domain.Announcement{}, toAppError("announcement not found", err)
-	}
-	before := announcementFromDB(beforeRow)
-
-	row, err := q.FailAnnouncementPublish(ctx, db.FailAnnouncementPublishParams{
-		ID:        pgUUID(id),
-		LastError: text(&failure),
-	})
-	if err != nil {
-		return domain.Announcement{}, toAppError("announcement not found", err)
-	}
-
-	result := announcementFromDB(row)
-	if err := audit.WriteService(ctx, q, uuidFromPG(row.OrganizationID), "discord-bot", appctx.RequestIPFromContext(ctx), "announcement.publish_fail", "announcement", result.ID, before, result); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to commit publish failure", err)
-	}
-	return result, nil
+// FailPublishRequest is kept for OpenAPI interface compatibility but returns not found.
+func (s *Service) FailPublishRequest(_ context.Context, _ uuid.UUID, _ string) (domain.Announcement, error) {
+	return domain.Announcement{}, domain.NewAppError(domain.ErrorCodeNotFound, "internal endpoints are deprecated; use webhook", nil)
 }
 
-func (s *Service) loadTask(ctx context.Context, q *db.Queries, organizationID uuid.UUID, taskID uuid.UUID) (domain.Task, error) {
-	row, err := q.GetTaskByID(ctx, db.GetTaskByIDParams{
-		OrganizationID: pgUUID(organizationID),
-		ID:             pgUUID(taskID),
-	})
+// --- internal helpers ---
+
+func (s *Service) loadTask(ctx context.Context, organizationID uuid.UUID, taskID uuid.UUID) (domain.Task, error) {
+	doc, err := s.store.GetTaskByID(ctx, organizationID, taskID)
 	if err != nil {
 		return domain.Task{}, toAppError("task not found", err)
 	}
-	approvals, err := q.ListTaskApprovalsByTaskID(ctx, pgUUID(taskID))
+	approvals, err := s.store.ListTaskApprovals(ctx, taskID)
 	if err != nil {
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to load task approvals", err)
 	}
-	return taskFromDB(row, approvals), nil
+	return taskFromDoc(taskID, doc, approvals), nil
 }
 
-func (s *Service) attachApprovals(ctx context.Context, q *db.Queries, rows []db.Task) ([]domain.Task, error) {
-	if len(rows) == 0 {
+func (s *Service) attachApprovals(ctx context.Context, ids []uuid.UUID, docs []repository.TaskDoc) ([]domain.Task, error) {
+	if len(docs) == 0 {
 		return []domain.Task{}, nil
 	}
 
-	ids := make([]pgtype.UUID, 0, len(rows))
-	for _, row := range rows {
-		ids = append(ids, row.ID)
-	}
-	approvals, err := q.ListTaskApprovalsByTaskIDs(ctx, ids)
-	if err != nil {
-		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list task approvals", err)
-	}
-
-	grouped := map[uuid.UUID][]db.TaskApproval{}
-	for _, approval := range approvals {
-		taskID := uuidFromPG(approval.TaskID)
-		grouped[taskID] = append(grouped[taskID], approval)
-	}
-
-	results := make([]domain.Task, 0, len(rows))
-	for _, row := range rows {
-		results = append(results, taskFromDB(row, grouped[uuidFromPG(row.ID)]))
+	results := make([]domain.Task, 0, len(docs))
+	for i, doc := range docs {
+		approvals, err := s.store.ListTaskApprovals(ctx, ids[i])
+		if err != nil {
+			return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list task approvals", err)
+		}
+		results = append(results, taskFromDoc(ids[i], doc, approvals))
 	}
 	return results, nil
 }
 
-func ensureMembers(ctx context.Context, q *db.Queries, organizationID uuid.UUID, userIDs []uuid.UUID) error {
+func (s *Service) ensureMembers(ctx context.Context, organizationID uuid.UUID, userIDs []uuid.UUID) error {
 	for _, userID := range userIDs {
-		if _, err := q.GetOrganizationMember(ctx, db.GetOrganizationMemberParams{
-			OrganizationID: pgUUID(organizationID),
-			UserID:         pgUUID(userID),
-		}); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return domain.NewAppError(domain.ErrorCodeValidation, fmt.Sprintf("user %s is not a member of the organization", userID), err)
+		if _, err := s.store.GetOrganizationMember(ctx, organizationID, userID); err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return domain.NewAppError(domain.ErrorCodeValidation, "user "+userID.String()+" is not a member of the organization", err)
 			}
 			return domain.NewAppError(domain.ErrorCodeInternal, "failed to validate organization member", err)
 		}
@@ -793,37 +571,11 @@ func ensureMembers(ctx context.Context, q *db.Queries, organizationID uuid.UUID,
 	return nil
 }
 
-func ensureOptionalMember(ctx context.Context, q *db.Queries, organizationID uuid.UUID, userID *uuid.UUID) error {
+func (s *Service) ensureOptionalMember(ctx context.Context, organizationID uuid.UUID, userID *uuid.UUID) error {
 	if userID == nil {
 		return nil
 	}
-	return ensureMembers(ctx, q, organizationID, []uuid.UUID{*userID})
-}
-
-func upsertTaskApprovals(ctx context.Context, q *db.Queries, taskID uuid.UUID, approvedMap map[uuid.UUID]*time.Time, approverIDs []uuid.UUID) error {
-	if err := q.DeleteTaskApprovalsByTaskID(ctx, pgUUID(taskID)); err != nil {
-		return domain.NewAppError(domain.ErrorCodeInternal, "failed to replace task approvals", err)
-	}
-	for _, approverID := range approverIDs {
-		approvedAt := timestamptz(nil)
-		if approvedMap != nil {
-			if existing, ok := approvedMap[approverID]; ok {
-				approvedAt = timestamptz(existing)
-			}
-		}
-		if err := q.CreateTaskApprovalWithState(ctx, db.CreateTaskApprovalWithStateParams{
-			TaskID:         pgUUID(taskID),
-			ApproverUserID: pgUUID(approverID),
-			ApprovedAt:     approvedAt,
-		}); err != nil {
-			return domain.NewAppError(domain.ErrorCodeInternal, "failed to create task approval", err)
-		}
-	}
-	return nil
-}
-
-func rollbackTx(ctx context.Context, tx pgx.Tx) {
-	_ = tx.Rollback(ctx)
+	return s.ensureMembers(ctx, organizationID, []uuid.UUID{*userID})
 }
 
 func canWrite(role string) bool {
@@ -857,132 +609,74 @@ func normalizeUniqueUUIDs(values []uuid.UUID) ([]uuid.UUID, error) {
 }
 
 func toAppError(message string, err error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, repository.ErrNotFound) {
 		return domain.NewAppError(domain.ErrorCodeNotFound, message, err)
+	}
+	var appErr *domain.AppError
+	if errors.As(err, &appErr) {
+		return err
 	}
 	return domain.NewAppError(domain.ErrorCodeInternal, message, err)
 }
 
-func taskFromDB(row db.Task, approvals []db.TaskApproval) domain.Task {
+func taskFromDoc(id uuid.UUID, doc repository.TaskDoc, approvals []repository.TaskApprovalDoc) domain.Task {
 	approverIDs := make([]uuid.UUID, 0, len(approvals))
 	approvedIDs := make([]uuid.UUID, 0, len(approvals))
 	for _, approval := range approvals {
-		approverID := uuidFromPG(approval.ApproverUserID)
+		approverID, _ := uuid.Parse(approval.ApproverUserID)
 		approverIDs = append(approverIDs, approverID)
-		if approval.ApprovedAt.Valid {
+		if approval.ApprovedAt != nil {
 			approvedIDs = append(approvedIDs, approverID)
 		}
 	}
 
+	var assigneeID *uuid.UUID
+	if doc.AssigneeID != nil {
+		parsed, err := uuid.Parse(*doc.AssigneeID)
+		if err == nil {
+			assigneeID = &parsed
+		}
+	}
+	createdBy, _ := uuid.Parse(doc.CreatedBy)
+
 	return domain.Task{
-		ID:                  uuidFromPG(row.ID),
-		Title:               row.Title,
-		Status:              row.Status,
-		DueDate:             datePtr(row.DueDate),
-		ReferenceURL:        textPtr(row.ReferenceUrl),
-		AssigneeID:          uuidPtrFromPG(row.AssigneeID),
-		CreatedBy:           uuidFromPG(row.CreatedBy),
+		ID:                  id,
+		Title:               doc.Title,
+		Status:              doc.Status,
+		DueDate:             doc.DueDate,
+		ReferenceURL:        doc.ReferenceURL,
+		AssigneeID:          assigneeID,
+		CreatedBy:           createdBy,
 		ApproverIDs:         approverIDs,
 		ApprovedApproverIDs: approvedIDs,
 		ApprovalState:       domain.ComputeApprovalState(len(approverIDs), len(approvedIDs)),
-		Version:             row.Version,
-		Year:                row.Year,
-		Month:               row.Month,
+		Version:             doc.Version,
+		Year:                doc.Year,
+		Month:               doc.Month,
 	}
 }
 
-func meetingFromDB(row db.Meeting) domain.Meeting {
+func meetingFromDoc(id uuid.UUID, doc repository.MeetingDoc) domain.Meeting {
 	return domain.Meeting{
-		ID:          uuidFromPG(row.ID),
-		Year:        row.Year,
-		Month:       row.Month,
-		ScheduledAt: timestamptzPtr(row.ScheduledAt),
-		MeetingURL:  textPtr(row.MeetingUrl),
-		Notes:       textPtr(row.Notes),
-		Status:      row.Status,
+		ID:          id,
+		Year:        doc.Year,
+		Month:       doc.Month,
+		ScheduledAt: doc.ScheduledAt,
+		MeetingURL:  doc.MeetingURL,
+		Notes:       doc.Notes,
+		Status:      doc.Status,
 	}
 }
 
-func announcementFromDB(row db.Announcement) domain.Announcement {
+func announcementFromDoc(id uuid.UUID, doc repository.AnnouncementDoc) domain.Announcement {
 	return domain.Announcement{
-		ID:               uuidFromPG(row.ID),
-		Year:             row.Year,
-		Month:            row.Month,
-		Body:             row.Body,
-		Status:           row.Status,
-		PublishChannel:   textPtr(row.PublishChannel),
-		DiscordMessageID: textPtr(row.DiscordMessageID),
-		LastError:        textPtr(row.LastError),
+		ID:               id,
+		Year:             doc.Year,
+		Month:            doc.Month,
+		Body:             doc.Body,
+		Status:           doc.Status,
+		PublishChannel:   doc.PublishChannel,
+		DiscordMessageID: doc.DiscordMessageID,
+		LastError:        doc.LastError,
 	}
-}
-
-func pgUUID(id uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{Bytes: [16]byte(id), Valid: id != uuid.Nil}
-}
-
-func uuidPtr(id *uuid.UUID) pgtype.UUID {
-	if id == nil {
-		return pgtype.UUID{}
-	}
-	return pgUUID(*id)
-}
-
-func uuidFromPG(value pgtype.UUID) uuid.UUID {
-	if !value.Valid {
-		return uuid.Nil
-	}
-	return uuid.UUID(value.Bytes)
-}
-
-func uuidPtrFromPG(value pgtype.UUID) *uuid.UUID {
-	if !value.Valid {
-		return nil
-	}
-	id := uuid.UUID(value.Bytes)
-	return &id
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func textPtr(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
-}
-
-func date(value *time.Time) pgtype.Date {
-	if value == nil {
-		return pgtype.Date{}
-	}
-	return pgtype.Date{Time: *value, Valid: true}
-}
-
-func datePtr(value pgtype.Date) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time
-	return &result
-}
-
-func timestamptz(value *time.Time) pgtype.Timestamptz {
-	if value == nil {
-		return pgtype.Timestamptz{}
-	}
-	return pgtype.Timestamptz{Time: *value, Valid: true}
-}
-
-func timestamptzPtr(value pgtype.Timestamptz) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time
-	return &result
 }

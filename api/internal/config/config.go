@@ -6,43 +6,25 @@ import (
 	"strings"
 )
 
-const (
-	AuthModeStub = "stub"
-	AuthModeOIDC = "oidc"
-)
-
 type Config struct {
-	DatabaseURL      string
-	AuthMode         string
-	OIDCIssuerURL    string
-	OIDCClientID     string
-	OIDCClientSecret string
-	DevJWTSecret     string
-	DefaultOrgName   string
-	DefaultOrgSlug   string
-	OwnerEmails      map[string]struct{}
-	BotSharedToken string
-	Port           string
+	FirebaseCredentialsJSON string
+	DiscordWebhookURL       string
+	DefaultOrgName          string
+	DefaultOrgSlug          string
+	OwnerEmails             map[string]struct{}
+	Port                    string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		DatabaseURL:      strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		AuthMode:         strings.TrimSpace(os.Getenv("AUTH_MODE")),
-		OIDCIssuerURL:    strings.TrimSpace(os.Getenv("OIDC_ISSUER_URL")),
-		OIDCClientID:     strings.TrimSpace(os.Getenv("OIDC_CLIENT_ID")),
-		OIDCClientSecret: strings.TrimSpace(os.Getenv("OIDC_CLIENT_SECRET")),
-		DevJWTSecret:     strings.TrimSpace(os.Getenv("DEV_JWT_SECRET")),
-		DefaultOrgName:   strings.TrimSpace(os.Getenv("DEFAULT_ORG_NAME")),
-		DefaultOrgSlug:   strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
-		OwnerEmails:      parseOwnerEmails(strings.TrimSpace(os.Getenv("OWNER_EMAILS"))),
-		BotSharedToken: strings.TrimSpace(os.Getenv("BOT_SHARED_TOKEN")),
-		Port:           defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
+		FirebaseCredentialsJSON: strings.TrimSpace(os.Getenv("FIREBASE_CREDENTIALS_JSON")),
+		DiscordWebhookURL:       strings.TrimSpace(os.Getenv("DISCORD_WEBHOOK_URL")),
+		DefaultOrgName:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_NAME")),
+		DefaultOrgSlug:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
+		OwnerEmails:             parseOwnerEmails(strings.TrimSpace(os.Getenv("OWNER_EMAILS"))),
+		Port:                    defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
 	}
 
-	if cfg.AuthMode == "" {
-		cfg.AuthMode = AuthModeStub
-	}
 	if cfg.DefaultOrgName == "" {
 		cfg.DefaultOrgName = "StepByCode"
 	}
@@ -51,16 +33,10 @@ func Load() (Config, error) {
 	}
 
 	switch {
-	case cfg.DatabaseURL == "":
-		return Config{}, errors.New("DATABASE_URL is required")
-	case cfg.BotSharedToken == "":
-		return Config{}, errors.New("BOT_SHARED_TOKEN is required")
-	case cfg.AuthMode != AuthModeStub && cfg.AuthMode != AuthModeOIDC:
-		return Config{}, errors.New("AUTH_MODE must be stub or oidc")
-	case cfg.AuthMode == AuthModeStub && cfg.DevJWTSecret == "":
-		return Config{}, errors.New("DEV_JWT_SECRET is required when AUTH_MODE=stub")
-	case cfg.AuthMode == AuthModeOIDC && (cfg.OIDCIssuerURL == "" || cfg.OIDCClientID == ""):
-		return Config{}, errors.New("OIDC_ISSUER_URL and OIDC_CLIENT_ID are required when AUTH_MODE=oidc")
+	case cfg.FirebaseCredentialsJSON == "":
+		return Config{}, errors.New("FIREBASE_CREDENTIALS_JSON is required")
+	case cfg.DiscordWebhookURL == "":
+		return Config{}, errors.New("DISCORD_WEBHOOK_URL is required")
 	}
 
 	return cfg, nil

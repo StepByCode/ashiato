@@ -1,91 +1,69 @@
 package simpleapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-
-	"github.com/dokkiitech/ashiato/api/internal/firebase"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
+// TaskResponse matches the spec in docs/backend-api-request.md §4.1.
 type TaskResponse struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Owner     string `json:"owner"`
-	State     string `json:"state"`
-	URL       string `json:"url"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	ID        string `json:"id" firestore:"id"`
+	Title     string `json:"title" firestore:"title"`
+	Owner     string `json:"owner" firestore:"owner"`
+	State     string `json:"state" firestore:"state"`
+	URL       string `json:"url" firestore:"url"`
+	CreatedAt string `json:"createdAt" firestore:"createdAt"`
+	UpdatedAt string `json:"updatedAt" firestore:"updatedAt"`
 }
 
 var validOwners = map[string]bool{
-	"kido":     true,
-	"kitahara": true,
-	"sogo":     true,
-	"nakai":    true,
+	"kido": true, "kitahara": true, "sogo": true, "nakai": true,
 }
 
 var validStates = map[string]bool{
-	"in_progress": true,
-	"done":        true,
-	"approved":    true,
+	"in_progress": true, "done": true, "approved": true,
 }
 
 const tasksCollection = "simple_tasks"
 
-func RegisterTaskRoutes(g *echo.Group, fs *firebase.Firestore) {
-	g.GET("/tasks", getTasksHandler(fs))
-	g.POST("/tasks", createTaskHandler(fs))
-	g.PATCH("/tasks/:taskId/owner", patchTaskOwnerHandler(fs))
-	g.PATCH("/tasks/:taskId/url", patchTaskURLHandler(fs))
-	g.PATCH("/tasks/:taskId/state", patchTaskStateHandler(fs))
+// RegisterTaskRoutes registers Task API endpoints on the given Echo group.
+func RegisterTaskRoutes(g *echo.Group, client *firestore.Client) {
+	g.GET("/tasks", getTasksHandler(client))
+	g.POST("/tasks", createTaskHandler(client))
+	g.PATCH("/tasks/:taskId/owner", patchTaskOwnerHandler(client))
+	g.PATCH("/tasks/:taskId/url", patchTaskURLHandler(client))
+	g.PATCH("/tasks/:taskId/state", patchTaskStateHandler(client))
 }
 
-func docToTask(doc *firebase.Document) TaskResponse {
-	f := doc.Fields
-	return TaskResponse{
-		ID:        firebase.GetStringField(f, "id"),
-		Title:     firebase.GetStringField(f, "title"),
-		Owner:     firebase.GetStringField(f, "owner"),
-		State:     firebase.GetStringField(f, "state"),
-		URL:       firebase.GetStringField(f, "url"),
-		CreatedAt: firebase.GetStringField(f, "createdAt"),
-		UpdatedAt: firebase.GetStringField(f, "updatedAt"),
-	}
-}
-
-func taskFields(id, title, owner, state, url string, createdAt, updatedAt time.Time) map[string]interface{} {
-	return map[string]interface{}{
-		"id":        firebase.StringVal(id),
-		"title":     firebase.StringVal(title),
-		"owner":     firebase.StringVal(owner),
-		"state":     firebase.StringVal(state),
-		"url":       firebase.StringVal(url),
-		"createdAt": firebase.StringVal(createdAt.Format(time.RFC3339)),
-		"updatedAt": firebase.StringVal(updatedAt.Format(time.RFC3339)),
-	}
-}
-
-func getTasksHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func getTasksHandler(client *firestore.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
 		month := c.QueryParam("month")
 
-		docs, err := fs.List(ctx, tasksCollection)
+		q := client.Collection(tasksCollection).OrderBy("createdAt", firestore.Desc)
+
+		docs, err := q.Documents(ctx).GetAll()
 		if err != nil {
 			return internalError(c)
 		}
 
 		tasks := make([]TaskResponse, 0, len(docs))
-		for i := range docs {
-			t := docToTask(&docs[i])
-
-			// Filter by month if specified
+		for _, doc := range docs {
+			var t TaskResponse
+			if err := doc.DataTo(&t); err != nil {
+				continue
+			}
+			// Filter by month if specified (format: "2026-02")
 			if month != "" {
 				var y, m int
 				if _, parseErr := fmt.Sscanf(month, "%d-%d", &y, &m); parseErr != nil {
@@ -106,7 +84,7 @@ func getTasksHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	}
 }
 
-func createTaskHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func createTaskHandler(client *firestore.Client) echo.HandlerFunc {
 	type request struct {
 		Title string `json:"title"`
 		Owner string `json:"owner"`
@@ -127,35 +105,30 @@ func createTaskHandler(fs *firebase.Firestore) echo.HandlerFunc {
 		}
 
 		id := "task-" + uuid.New().String()[:8]
-		now := time.Now()
-		fields := taskFields(id, title, req.Owner, "in_progress", "", now, now)
-
-		_, err := fs.Set(c.Request().Context(), tasksCollection, id, fields)
-		if err != nil {
-			return internalError(c)
-		}
-
+		now := time.Now().Format(time.RFC3339)
 		task := TaskResponse{
 			ID:        id,
 			Title:     title,
 			Owner:     req.Owner,
 			State:     "in_progress",
 			URL:       "",
-			CreatedAt: now.Format(time.RFC3339),
-			UpdatedAt: now.Format(time.RFC3339),
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+
+		if _, err := client.Collection(tasksCollection).Doc(id).Set(c.Request().Context(), task); err != nil {
+			return internalError(c)
 		}
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{"task": task})
 	}
 }
 
-func patchTaskOwnerHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func patchTaskOwnerHandler(client *firestore.Client) echo.HandlerFunc {
 	type request struct {
 		Owner string `json:"owner"`
 	}
-
 	return func(c echo.Context) error {
-		taskID := c.Param("taskId")
 		var req request
 		if err := c.Bind(&req); err != nil {
 			return validationError(c, "body", "invalid JSON")
@@ -163,22 +136,15 @@ func patchTaskOwnerHandler(fs *firebase.Firestore) echo.HandlerFunc {
 		if !validOwners[req.Owner] {
 			return validationError(c, "owner", "is required")
 		}
-
-		task, err := updateTaskField(c, fs, taskID, "owner", req.Owner)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, map[string]interface{}{"task": task})
+		return updateTaskField(c, client, c.Param("taskId"), "owner", req.Owner)
 	}
 }
 
-func patchTaskURLHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func patchTaskURLHandler(client *firestore.Client) echo.HandlerFunc {
 	type request struct {
 		URL string `json:"url"`
 	}
-
 	return func(c echo.Context) error {
-		taskID := c.Param("taskId")
 		var req request
 		if err := c.Bind(&req); err != nil {
 			return validationError(c, "body", "invalid JSON")
@@ -186,20 +152,14 @@ func patchTaskURLHandler(fs *firebase.Firestore) echo.HandlerFunc {
 		if len(req.URL) > 2048 {
 			return validationError(c, "url", "must be at most 2048 characters")
 		}
-
-		task, err := updateTaskField(c, fs, taskID, "url", req.URL)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, map[string]interface{}{"task": task})
+		return updateTaskField(c, client, c.Param("taskId"), "url", req.URL)
 	}
 }
 
-func patchTaskStateHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func patchTaskStateHandler(client *firestore.Client) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
 	}
-
 	return func(c echo.Context) error {
 		taskID := c.Param("taskId")
 		var req request
@@ -210,60 +170,63 @@ func patchTaskStateHandler(fs *firebase.Firestore) echo.HandlerFunc {
 			return validationError(c, "state", "must be in_progress, done, or approved")
 		}
 
-		// Get current task to check state transition
 		ctx := c.Request().Context()
-		doc, err := fs.Get(ctx, tasksCollection, taskID)
+		doc, err := client.Collection(tasksCollection).Doc(taskID).Get(ctx)
 		if err != nil {
-			if errors.Is(err, firebase.ErrNotFound) {
+			if isNotFound(err) {
 				return notFoundError(c, "task not found")
 			}
 			return internalError(c)
 		}
-		currentState := firebase.GetStringField(doc.Fields, "state")
 
-		if currentState == "approved" {
+		var current TaskResponse
+		if err := doc.DataTo(&current); err != nil {
+			return internalError(c)
+		}
+
+		if current.State == "approved" {
 			return conflictError(c, "cannot transition from approved state")
 		}
 
-		// Allowed transitions: in_progress->done, done->in_progress, done->approved
-		allowed := false
-		switch {
-		case currentState == "in_progress" && req.State == "done":
-			allowed = true
-		case currentState == "done" && req.State == "in_progress":
-			allowed = true
-		case currentState == "done" && req.State == "approved":
-			allowed = true
-		}
+		allowed := (current.State == "in_progress" && req.State == "done") ||
+			(current.State == "done" && req.State == "in_progress") ||
+			(current.State == "done" && req.State == "approved")
 		if !allowed {
-			return conflictError(c, fmt.Sprintf("cannot transition from %s to %s", currentState, req.State))
+			return conflictError(c, fmt.Sprintf("cannot transition from %s to %s", current.State, req.State))
 		}
 
-		task, err := updateTaskField(c, fs, taskID, "state", req.State)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, map[string]interface{}{"task": task})
+		return updateTaskField(c, client, taskID, "state", req.State)
 	}
 }
 
-func updateTaskField(c echo.Context, fs *firebase.Firestore, taskID, field, value string) (*TaskResponse, error) {
+func updateTaskField(c echo.Context, client *firestore.Client, taskID, field, value string) error {
 	ctx := c.Request().Context()
+	now := time.Now().Format(time.RFC3339)
 
-	now := time.Now()
-	fields := map[string]interface{}{
-		field:       firebase.StringVal(value),
-		"updatedAt": firebase.StringVal(now.Format(time.RFC3339)),
-	}
-
-	doc, err := fs.Patch(ctx, tasksCollection, taskID, fields, []string{field, "updatedAt"})
+	ref := client.Collection(tasksCollection).Doc(taskID)
+	_, err := ref.Update(ctx, []firestore.Update{
+		{Path: field, Value: value},
+		{Path: "updatedAt", Value: now},
+	})
 	if err != nil {
-		if errors.Is(err, firebase.ErrNotFound) {
-			return nil, notFoundError(c, "task not found")
+		if isNotFound(err) {
+			return notFoundError(c, "task not found")
 		}
-		return nil, internalError(c)
+		return internalError(c)
 	}
 
-	task := docToTask(doc)
-	return &task, nil
+	doc, err := ref.Get(ctx)
+	if err != nil {
+		return internalError(c)
+	}
+	var task TaskResponse
+	if err := doc.DataTo(&task); err != nil {
+		return internalError(c)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{"task": task})
+}
+
+func isNotFound(err error) bool {
+	return status.Code(err) == codes.NotFound || errors.Is(err, context.Canceled)
 }

@@ -3,7 +3,7 @@
 ## 概要
 
 Ashiato フロントエンドは **Firebase Authentication（Email/Password）** を採用しています。
-ユーザーは Firebase コンソールで事前に作成され、メールアドレスとパスワードでログインします。
+ユーザーは既存メンバーの招待によって事前に発行され、メールアドレスとパスワードでログインします。ログイン画面から自己登録はできません。
 
 ## アーキテクチャ
 
@@ -123,17 +123,12 @@ async function fetchFromAPI(path: string) {
 
 ## ユーザー管理
 
-### 画面からの作成（推奨）
+### 招待による発行
 
-- `/members` ページからメンバーの作成が可能
-- **OWNER ロールのユーザーのみ** がメンバーを作成できる
-- 作成フォームで `メールアドレス` `パスワード` `表示名（任意）` を入力
-- API（`POST /api/v1/members`）経由で Firebase Auth ユーザーが作成され、組織に自動所属する
-
-### Firebase コンソールからの作成
-
-- Firebase コンソール → Authentication → Users から直接ユーザーを追加することも可能
-- コンソールで作成したユーザーは初回ログイン時に API 側で自動 upsert される
+- `/invite` ページからログイン済みメンバーが新規アカウントを発行できます
+- メールアドレスを入力すると API が Firebase Auth ユーザーを作成し、初回パスワードを自動生成します
+- Resend が設定されていれば、招待メールで初回ログイン情報を送信します
+- 招待されたユーザーはログイン後に `/profile-setup` で初期プロフィールを登録します
 
 ### ロール付与
 
@@ -144,7 +139,7 @@ async function fetchFromAPI(path: string) {
 
 | 症状 | 原因 | 対処 |
 | --- | --- | --- |
-| ログインできない | Firebase コンソールでユーザーが未作成 | `/members` 画面または Firebase コンソールでユーザーを追加 |
+| ログインできない | 招待によるアカウント発行が未実施 | 既存メンバーに `/invite` からアカウントを発行してもらう |
 | `auth/invalid-api-key` | `NEXT_PUBLIC_FIREBASE_API_KEY` が未設定または間違い | `.env.local` を確認 |
 | API が 401 を返す | ID トークンが期限切れまたは未送信 | `getIdToken()` は自動で更新されるが、明示的に `getIdToken(true)` で強制更新も可能 |
 | ログイン後すぐログアウトされる | `AuthProvider` がマウントされていない | `layout.tsx` で `<AuthProvider>` がルートを囲んでいるか確認 |

@@ -3,13 +3,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { isFirebaseConfigured } from "@/lib/firebase";
 import { apiFetch } from "@/lib/api";
 
 const positions = ["代表", "副代表", "エンジニア", "デザイナー", "広報", "その他"] as const;
 
 export default function SettingsPage() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, getIdToken } = useAuth();
   const router = useRouter();
   const [name, setName] = useState("");
   const [position, setPosition] = useState("");
@@ -22,7 +21,9 @@ export default function SettingsPage() {
 
   const fetchProfile = useCallback(async () => {
     try {
-      const res = await apiFetch(`/api/v1/profile/${uid}`, null);
+      const token = await getIdToken();
+      if (!token) return;
+      const res = await apiFetch(`/api/v1/profile/${uid}`, token);
       if (res.ok) {
         const data = await res.json();
         setName(data.name ?? "");
@@ -36,14 +37,16 @@ export default function SettingsPage() {
   }, [uid]);
 
   useEffect(() => {
-    if (!loading) fetchProfile();
-  }, [loading, fetchProfile]);
+    if (!loading && !user) {
+      router.replace("/login");
+      return;
+    }
+    if (user) {
+      void fetchProfile();
+    }
+  }, [fetchProfile, loading, router, user]);
 
-  if (loading) return null;
-  if (!user && isFirebaseConfigured) {
-    router.replace("/login");
-    return null;
-  }
+  if (loading || !user) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -53,7 +56,12 @@ export default function SettingsPage() {
     setSubmitting(true);
 
     try {
-      const res = await apiFetch(`/api/v1/profile/${uid}`, null, {
+      const token = await getIdToken();
+      if (!token) {
+        setError("ログイン状態を確認できませんでした");
+        return;
+      }
+      const res = await apiFetch(`/api/v1/profile/${uid}`, token, {
         method: "PATCH",
         body: JSON.stringify({ name: name.trim(), position }),
       });

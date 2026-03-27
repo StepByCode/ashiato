@@ -16,6 +16,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/dokkiitech/ashiato/api/internal/discord"
+	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
 
 // InviteDeps holds dependencies for invite endpoints.
@@ -53,6 +54,12 @@ func RegisterInviteRoutes(g *echo.Group, deps InviteDeps) {
 
 func inviteHandler(deps InviteDeps) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		if _, ok := appctx.ActorFromContext(c.Request().Context()); !ok {
+			return c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error: ErrorBody{Code: "UNAUTHORIZED", Message: "sign-in is required"},
+			})
+		}
+
 		var req inviteRequest
 		if err := c.Bind(&req); err != nil {
 			return validationError(c, "body", "invalid JSON")
@@ -125,6 +132,12 @@ func inviteHandler(deps InviteDeps) echo.HandlerFunc {
 
 func listInvitesHandler(client *db.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		if _, ok := appctx.ActorFromContext(c.Request().Context()); !ok {
+			return c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error: ErrorBody{Code: "UNAUTHORIZED", Message: "sign-in is required"},
+			})
+		}
+
 		ref := client.NewRef(invitesCollection)
 		var all map[string]map[string]interface{}
 		if err := ref.Get(c.Request().Context(), &all); err != nil || len(all) == 0 {

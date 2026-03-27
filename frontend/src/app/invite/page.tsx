@@ -3,7 +3,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { isFirebaseConfigured } from "@/lib/firebase";
 import { apiFetch } from "@/lib/api";
 
 type Invite = {
@@ -13,7 +12,7 @@ type Invite = {
 };
 
 export default function InvitePage() {
-  const { user, loading } = useAuth();
+  const { user, loading, getIdToken } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -24,7 +23,9 @@ export default function InvitePage() {
 
   const fetchInvites = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/v1/invites", null);
+      const token = await getIdToken();
+      if (!token) return;
+      const res = await apiFetch("/api/v1/invites", token);
       if (res.ok) {
         const data = await res.json();
         setInvites(data.invites ?? []);
@@ -37,14 +38,16 @@ export default function InvitePage() {
   }, []);
 
   useEffect(() => {
-    fetchInvites();
-  }, [fetchInvites]);
+    if (!loading && !user) {
+      router.replace("/login");
+      return;
+    }
+    if (user) {
+      void fetchInvites();
+    }
+  }, [fetchInvites, loading, router, user]);
 
-  if (loading) return null;
-  if (!user && isFirebaseConfigured) {
-    router.replace("/login");
-    return null;
-  }
+  if (loading || !user) return null;
 
   const handleInvite = async (e: FormEvent) => {
     e.preventDefault();
@@ -54,7 +57,12 @@ export default function InvitePage() {
     setSubmitting(true);
 
     try {
-      const res = await apiFetch("/api/v1/invite", null, {
+      const token = await getIdToken();
+      if (!token) {
+        setError("ログイン状態を確認できませんでした");
+        return;
+      }
+      const res = await apiFetch("/api/v1/invite", token, {
         method: "POST",
         body: JSON.stringify({ email: email.trim() }),
       });
@@ -105,7 +113,7 @@ export default function InvitePage() {
               onChange={(e) => setEmail(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              パスワードは自動生成され、招待メールで送信されます。
+              招待されたユーザーだけが初回ログインできます。新規ユーザーはこの画面からのみ発行します。
             </p>
           </div>
 

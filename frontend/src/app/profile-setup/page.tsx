@@ -1,26 +1,27 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { isFirebaseConfigured } from "@/lib/firebase";
 import { apiFetch } from "@/lib/api";
 
 const positions = ["代表", "副代表", "エンジニア", "デザイナー", "広報", "その他"] as const;
 
 export default function ProfileSetupPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, getIdToken } = useAuth();
   const router = useRouter();
   const [name, setName] = useState("");
   const [position, setPosition] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  if (loading) return null;
-  if (!user && isFirebaseConfigured) {
-    router.replace("/login");
-    return null;
-  }
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, router, user]);
+
+  if (loading || !user) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,8 +30,12 @@ export default function ProfileSetupPage() {
     setSubmitting(true);
 
     try {
-      const uid = user?.uid ?? "anonymous";
-      const res = await apiFetch(`/api/v1/profile/${uid}`, null, {
+      const token = await getIdToken();
+      if (!token) {
+        setError("ログイン状態を確認できませんでした");
+        return;
+      }
+      const res = await apiFetch(`/api/v1/profile/${user.uid}`, token, {
         method: "PATCH",
         body: JSON.stringify({ name: name.trim(), position }),
       });

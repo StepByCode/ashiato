@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { getFirebaseAuth } from "@/lib/firebase";
@@ -16,11 +16,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  if (loading) return null;
-  if (user) {
-    router.replace("/");
-    return null;
-  }
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/");
+    }
+  }, [loading, router, user]);
+
+  if (loading || user) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -33,11 +35,12 @@ export default function LoginPage() {
         return;
       }
       const credential = await signInWithEmailAndPassword(auth, email, password);
+      const token = await credential.user.getIdToken();
 
       // Check if profile exists, redirect to setup if not
       try {
         const uid = credential.user.uid;
-        const res = await apiFetch(`/api/v1/profile/${uid}`, null);
+        const res = await apiFetch(`/api/v1/profile/${uid}`, token);
         if (res.ok) {
           const profile = await res.json();
           if (!profile.name) {

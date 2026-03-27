@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -59,14 +60,17 @@ func getTasksHandler(client *db.Client) echo.HandlerFunc {
 
 		ref := client.NewRef(collection)
 		var all map[string]TaskResponse
-		if err := ref.OrderByChild("createdAt").Get(ctx, &all); err != nil {
-			return internalError(c)
+		if err := ref.Get(ctx, &all); err != nil || len(all) == 0 {
+			return c.JSON(http.StatusOK, map[string]interface{}{"tasks": []TaskResponse{}})
 		}
 
 		tasks := make([]TaskResponse, 0, len(all))
 		for _, t := range all {
 			tasks = append(tasks, t)
 		}
+		sort.Slice(tasks, func(i, j int) bool {
+			return tasks[i].CreatedAt < tasks[j].CreatedAt
+		})
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"tasks": tasks})
 	}

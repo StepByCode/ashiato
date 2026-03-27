@@ -44,7 +44,7 @@ const stateMeta: Record<
     cardClassName: "border-border/70 bg-card/95",
   },
   done: {
-    cardClassName: "border-[var(--success)] bg-[var(--success)] dark:border-[#4F7F5D] dark:bg-[#4F7F5D]",
+    cardClassName: "border-[var(--success)] bg-[var(--success)] dark:border-[#5E936C] dark:bg-[#3E5F44]",
   },
   approved: {
     cardClassName: "border-emerald-300/60 bg-[var(--surface-success)] dark:border-[#5E936C] dark:bg-[#3E5F44]",
@@ -228,7 +228,7 @@ export function TaskBoard() {
                           variant={isDoneLike ? "secondary" : "default"}
                           className={cn(
                             "h-10 w-full rounded-full px-4 text-sm font-semibold shadow-sm lg:w-36 lg:px-3 lg:text-xs",
-                            isDoneLike && "dark:bg-[#6AA678] dark:text-white dark:hover:bg-[#6AA678]",
+                            isDoneLike && "dark:bg-[#5E936C] dark:text-white dark:hover:bg-[#5E936C]",
                             !isDoneLike &&
                               "dark:border dark:border-border/70 dark:bg-[var(--surface-button)] dark:text-foreground dark:hover:bg-[var(--surface-button-subtle)]"
                           )}

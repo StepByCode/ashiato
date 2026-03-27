@@ -46,11 +46,12 @@ Done all at the page #3A2E20
 - Doneにするボタン（Dark）hover: #4A7453
 
 ### Task
-- Doneカード（Dark）背景/枠: #4F7F5D
+- Doneカード（Dark）背景: #3E5F44
+- Doneカード（Dark）枠: #5E936C
 - Approvedカード（Dark）背景: #3E5F44
 - Approvedカード（Dark）枠: #5E936C
 - Approve/Approvedボタン（Dark）背景: #5E936C
-- Doneトグルボタン（Dark）背景: #6AA678
+- Doneトグルボタン（Dark）背景: #5E936C
 - URLボタン（Dark）背景: #5E936C
 
 ### Meeting

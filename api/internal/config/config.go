@@ -27,7 +27,7 @@ func Load() (Config, error) {
 		DefaultOrgName:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_NAME")),
 		DefaultOrgSlug:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
 		OwnerEmails:             parseOwnerEmails(strings.TrimSpace(os.Getenv("OWNER_EMAILS"))),
-		Port:                    defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
+		Port:                    defaultValue(strings.TrimSpace(os.Getenv("PORT")), "9999"),
 		ResendAPIKey:            strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 		InviteFromEmail:         defaultValue(strings.TrimSpace(os.Getenv("INVITE_FROM_EMAIL")), "no-reply@stepbycode.work"),
 		CronSecret:              strings.TrimSpace(os.Getenv("CRON_SECRET")),

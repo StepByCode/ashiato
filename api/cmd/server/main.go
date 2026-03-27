@@ -14,6 +14,7 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
+	"google.golang.org/api/option"
 
 	"github.com/dokkiitech/ashiato/api/internal/auth"
 	"github.com/dokkiitech/ashiato/api/internal/config"
@@ -35,8 +36,9 @@ func main() {
 
 	logger := logging.NewLogger()
 
-	// Initialize Firebase App (uses GOOGLE_APPLICATION_CREDENTIALS).
-	fbApp, err := firebase.NewApp(ctx, nil)
+	// Initialize Firebase App with credentials JSON from environment variable.
+	opt := option.WithCredentialsJSON([]byte(cfg.FirebaseCredentialsJSON))
+	fbApp, err := firebase.NewApp(ctx, nil, opt)
 	if err != nil {
 		logger.Error("failed to initialize Firebase app", slog.Any("error", err))
 		os.Exit(1)

@@ -7,20 +7,22 @@ import (
 )
 
 type Config struct {
-	DefaultOrgName string
-	DefaultOrgSlug string
-	OwnerEmails    map[string]struct{}
-	BotSharedToken string
-	Port           string
+	FirebaseCredentialsJSON string
+	DefaultOrgName          string
+	DefaultOrgSlug          string
+	OwnerEmails             map[string]struct{}
+	BotSharedToken          string
+	Port                    string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		DefaultOrgName: strings.TrimSpace(os.Getenv("DEFAULT_ORG_NAME")),
-		DefaultOrgSlug: strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
-		OwnerEmails:    parseOwnerEmails(strings.TrimSpace(os.Getenv("OWNER_EMAILS"))),
-		BotSharedToken: strings.TrimSpace(os.Getenv("BOT_SHARED_TOKEN")),
-		Port:           defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
+		FirebaseCredentialsJSON: strings.TrimSpace(os.Getenv("FIREBASE_CREDENTIALS_JSON")),
+		DefaultOrgName:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_NAME")),
+		DefaultOrgSlug:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
+		OwnerEmails:             parseOwnerEmails(strings.TrimSpace(os.Getenv("OWNER_EMAILS"))),
+		BotSharedToken:          strings.TrimSpace(os.Getenv("BOT_SHARED_TOKEN")),
+		Port:                    defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
 	}
 
 	if cfg.DefaultOrgName == "" {
@@ -30,7 +32,10 @@ func Load() (Config, error) {
 		cfg.DefaultOrgSlug = "stepbycode"
 	}
 
-	if cfg.BotSharedToken == "" {
+	switch {
+	case cfg.FirebaseCredentialsJSON == "":
+		return Config{}, errors.New("FIREBASE_CREDENTIALS_JSON is required")
+	case cfg.BotSharedToken == "":
 		return Config{}, errors.New("BOT_SHARED_TOKEN is required")
 	}
 

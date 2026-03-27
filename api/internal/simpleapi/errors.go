@@ -1,9 +1,12 @@
 package simpleapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+
+	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
 
 // ErrorResponse matches the spec in docs/backend-api-request.md §3.
@@ -57,4 +60,16 @@ func internalError(c echo.Context) error {
 			Message: "internal server error",
 		},
 	})
+}
+
+func internalErrorWithLog(c echo.Context, message string, err error, fields ...any) error {
+	attrs := []any{
+		"trace_id", appctx.TraceIDFromContext(c.Request().Context()),
+		"path", c.Request().URL.Path,
+		"method", c.Request().Method,
+		"error", err,
+	}
+	attrs = append(attrs, fields...)
+	slog.ErrorContext(c.Request().Context(), message, attrs...)
+	return internalError(c)
 }

@@ -2,12 +2,15 @@ package simpleapi
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"firebase.google.com/go/v4/db"
 	"github.com/labstack/echo/v4"
+
+	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
 
 // MeetingResponse matches the spec in docs/backend-api-request.md §4.2.
@@ -48,6 +51,9 @@ func getMeetingHandler(client *db.Client) echo.HandlerFunc {
 		ref := client.NewRef(meetingCollection).Child(docID)
 		var resp MeetingResponse
 		if err := ref.Get(ctx, &resp); err != nil || resp.UpdatedAt == "" {
+			if err != nil {
+				slog.WarnContext(ctx, "meeting fetch failed; returning default", "trace_id", appctx.TraceIDFromContext(ctx), "doc_id", docID, "error", err)
+			}
 			return c.JSON(http.StatusOK, MeetingResponse{
 				MeetURL:   "",
 				UpdatedAt: time.Now().Format(time.RFC3339),
@@ -96,6 +102,9 @@ func patchMeetingHandler(client *db.Client) echo.HandlerFunc {
 		// Check if doc exists
 		var existing MeetingResponse
 		if err := ref.Get(ctx, &existing); err != nil || existing.UpdatedAt == "" {
+			if err != nil {
+				slog.WarnContext(ctx, "meeting fetch before save failed; creating document", "trace_id", appctx.TraceIDFromContext(ctx), "doc_id", docID, "error", err)
+			}
 			// Create new
 			data := MeetingResponse{
 				MeetURL:   "",
@@ -108,18 +117,18 @@ func patchMeetingHandler(client *db.Client) echo.HandlerFunc {
 				data.MeetURL = *req.MeetURL
 			}
 			if err := ref.Set(ctx, data); err != nil {
-				return internalError(c)
+				return internalErrorWithLog(c, "meeting create failed", err, "doc_id", docID, "year", req.Year, "month", req.Month)
 			}
 			return c.JSON(http.StatusOK, data)
 		}
 
 		if err := ref.Update(ctx, updates); err != nil {
-			return internalError(c)
+			return internalErrorWithLog(c, "meeting update failed", err, "doc_id", docID, "year", req.Year, "month", req.Month)
 		}
 
 		var resp MeetingResponse
 		if err := ref.Get(ctx, &resp); err != nil {
-			return internalError(c)
+			return internalErrorWithLog(c, "meeting fetch after update failed", err, "doc_id", docID, "year", req.Year, "month", req.Month)
 		}
 		return c.JSON(http.StatusOK, resp)
 	}

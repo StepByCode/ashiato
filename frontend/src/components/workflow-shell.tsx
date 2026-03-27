@@ -69,28 +69,34 @@ export function WorkflowShell({
       ? periods.slice(0, 4)
       : [selectedPeriod];
 
-  // Calculate the next month to provision (1 month after the newest period).
-  const nextProvisionTarget: Period = (() => {
-    if (periods.length === 0) {
-      const now = new Date();
-      return { year: now.getFullYear(), month: now.getMonth() + 2 };
-    }
-    const newest = periods[0];
-    const d = new Date(newest.year, newest.month, 1); // month is 0-indexed, so this is +1
-    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  // 当月・来月のうち未発行の月を検出する。
+  const missingPeriods: Period[] = (() => {
+    const now = new Date();
+    const targets: Period[] = [
+      { year: now.getFullYear(), month: now.getMonth() + 1 }, // 当月
+    ];
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    targets.push({ year: next.getFullYear(), month: next.getMonth() + 1 }); // 来月
+
+    return targets.filter(
+      (t) => !periods.some((p) => periodsEqual(p, t))
+    );
   })();
 
   const handleProvision = async () => {
+    if (missingPeriods.length === 0) return;
     setProvisioning(true);
     try {
-      const res = await apiFetch("/api/v1/workflow-periods/provision", null, {
-        method: "POST",
-        body: JSON.stringify({ year: nextProvisionTarget.year, month: nextProvisionTarget.month }),
-      });
-      if (res.ok) {
-        await refetchPeriods();
-        selectPeriod(nextProvisionTarget);
+      for (const target of missingPeriods) {
+        await apiFetch("/api/v1/workflow-periods/provision", null, {
+          method: "POST",
+          body: JSON.stringify({ year: target.year, month: target.month }),
+        });
       }
+      await refetchPeriods();
+      // 発行した中で最も新しい月に遷移
+      const newest = missingPeriods[missingPeriods.length - 1];
+      selectPeriod(newest);
     } catch {
       // ignore
     } finally {
@@ -157,15 +163,19 @@ export function WorkflowShell({
                 </button>
               );
             })}
-            <button
-              type="button"
-              disabled={provisioning}
-              onClick={handleProvision}
-              className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-dashed border-border/70 px-4 py-3 text-sm font-semibold text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
-            >
-              <Plus className="size-4" />
-              {provisioning ? "発行中..." : `${periodLabel(nextProvisionTarget)} を発行`}
-            </button>
+            {missingPeriods.length > 0 && (
+              <button
+                type="button"
+                disabled={provisioning}
+                onClick={handleProvision}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-dashed border-border/70 px-4 py-3 text-sm font-semibold text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+              >
+                <Plus className="size-4" />
+                {provisioning
+                  ? "発行中..."
+                  : missingPeriods.map((p) => periodLabel(p)).join("・") + " を発行"}
+              </button>
+            )}
           </div>
 
           <div className="absolute bottom-4 right-4 inline-grid grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-background/80 p-1 shadow-sm">
@@ -228,15 +238,17 @@ export function WorkflowShell({
                         </button>
                       );
                     })}
-                    <button
-                      type="button"
-                      disabled={provisioning}
-                      onClick={handleProvision}
-                      className="flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-border/70 px-3 text-xs font-semibold text-muted-foreground shadow-sm hover:border-primary/40 hover:text-foreground disabled:opacity-50"
-                    >
-                      <Plus className="size-3" />
-                      {provisioning ? "..." : "発行"}
-                    </button>
+                    {missingPeriods.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={provisioning}
+                        onClick={handleProvision}
+                        className="flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-border/70 px-3 text-xs font-semibold text-muted-foreground shadow-sm hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                      >
+                        <Plus className="size-3" />
+                        {provisioning ? "..." : "発行"}
+                      </button>
+                    )}
                   </div>
 
                   <div className="inline-grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">

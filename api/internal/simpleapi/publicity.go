@@ -5,23 +5,23 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"cloud.google.com/go/firestore"
+	"firebase.google.com/go/v4/db"
 	"github.com/labstack/echo/v4"
 )
 
 // TemplateResponse matches the spec in docs/backend-api-request.md §4.3.
 type TemplateResponse struct {
-	Text      string `json:"text" firestore:"text"`
-	UpdatedAt string `json:"updatedAt" firestore:"updatedAt"`
+	Text      string `json:"text"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // ChannelResponse matches the spec in docs/backend-api-request.md §4.4.
 type ChannelResponse struct {
-	ID        string `json:"id" firestore:"id"`
-	Name      string `json:"name" firestore:"name"`
-	Note      string `json:"note" firestore:"note"`
-	State     string `json:"state" firestore:"state"`
-	UpdatedAt string `json:"updatedAt" firestore:"updatedAt"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Note      string `json:"note"`
+	State     string `json:"state"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 const (
@@ -31,32 +31,28 @@ const (
 )
 
 // RegisterPublicityRoutes registers Publicity API endpoints.
-func RegisterPublicityRoutes(g *echo.Group, client *firestore.Client) {
+func RegisterPublicityRoutes(g *echo.Group, client *db.Client) {
 	g.GET("/publicity/template", getTemplateHandler(client))
 	g.PATCH("/publicity/template", patchTemplateHandler(client))
 	g.GET("/publicity/channels", getChannelsHandler(client))
 	g.PATCH("/publicity/channels/:channelId/state", patchChannelStateHandler(client))
 }
 
-func getTemplateHandler(client *firestore.Client) echo.HandlerFunc {
+func getTemplateHandler(client *db.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		doc, err := client.Collection(templateCollection).Doc(templateDocID).Get(c.Request().Context())
-		if err != nil {
+		ref := client.NewRef(templateCollection).Child(templateDocID)
+		var resp TemplateResponse
+		if err := ref.Get(c.Request().Context(), &resp); err != nil || resp.UpdatedAt == "" {
 			return c.JSON(http.StatusOK, TemplateResponse{
 				Text:      "",
 				UpdatedAt: time.Now().Format(time.RFC3339),
 			})
 		}
-
-		var resp TemplateResponse
-		if err := doc.DataTo(&resp); err != nil {
-			return internalError(c)
-		}
 		return c.JSON(http.StatusOK, resp)
 	}
 }
 
-func patchTemplateHandler(client *firestore.Client) echo.HandlerFunc {
+func patchTemplateHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
 		Text string `json:"text"`
 	}
@@ -74,27 +70,24 @@ func patchTemplateHandler(client *firestore.Client) echo.HandlerFunc {
 		now := time.Now().Format(time.RFC3339)
 		data := TemplateResponse{Text: req.Text, UpdatedAt: now}
 
-		ref := client.Collection(templateCollection).Doc(templateDocID)
-		if _, err := ref.Set(ctx, data); err != nil {
+		ref := client.NewRef(templateCollection).Child(templateDocID)
+		if err := ref.Set(ctx, data); err != nil {
 			return internalError(c)
 		}
 		return c.JSON(http.StatusOK, data)
 	}
 }
 
-func getChannelsHandler(client *firestore.Client) echo.HandlerFunc {
+func getChannelsHandler(client *db.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		docs, err := client.Collection(channelsCollection).Documents(c.Request().Context()).GetAll()
-		if err != nil || len(docs) == 0 {
+		ref := client.NewRef(channelsCollection)
+		var all map[string]ChannelResponse
+		if err := ref.Get(c.Request().Context(), &all); err != nil || len(all) == 0 {
 			return c.JSON(http.StatusOK, map[string]interface{}{"channels": defaultChannels()})
 		}
 
-		channels := make([]ChannelResponse, 0, len(docs))
-		for _, doc := range docs {
-			var ch ChannelResponse
-			if err := doc.DataTo(&ch); err != nil {
-				continue
-			}
+		channels := make([]ChannelResponse, 0, len(all))
+		for _, ch := range all {
 			channels = append(channels, ch)
 		}
 		if len(channels) == 0 {
@@ -104,7 +97,7 @@ func getChannelsHandler(client *firestore.Client) echo.HandlerFunc {
 	}
 }
 
-func patchChannelStateHandler(client *firestore.Client) echo.HandlerFunc {
+func patchChannelStateHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
 	}
@@ -126,28 +119,23 @@ func patchChannelStateHandler(client *firestore.Client) echo.HandlerFunc {
 
 		ctx := c.Request().Context()
 		now := time.Now().Format(time.RFC3339)
-		ref := client.Collection(channelsCollection).Doc(channelID)
+		ref := client.NewRef(channelsCollection).Child(channelID)
 
-		if _, err := ref.Get(ctx); err != nil {
-			if isNotFound(err) {
-				return notFoundError(c, "channel not found")
-			}
+		var existing ChannelResponse
+		if err := ref.Get(ctx, &existing); err != nil || existing.ID == "" {
+			return notFoundError(c, "channel not found")
+		}
+
+		updates := map[string]interface{}{
+			"state":     req.State,
+			"updatedAt": now,
+		}
+		if err := ref.Update(ctx, updates); err != nil {
 			return internalError(c)
 		}
 
-		if _, err := ref.Update(ctx, []firestore.Update{
-			{Path: "state", Value: req.State},
-			{Path: "updatedAt", Value: now},
-		}); err != nil {
-			return internalError(c)
-		}
-
-		doc, err := ref.Get(ctx)
-		if err != nil {
-			return internalError(c)
-		}
 		var ch ChannelResponse
-		if err := doc.DataTo(&ch); err != nil {
+		if err := ref.Get(ctx, &ch); err != nil {
 			return internalError(c)
 		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"channel": ch})

@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	FirebaseCredentialsJSON string
+	FirebaseDatabaseURL     string
 	DiscordWebhookURL       string
 	DefaultOrgName          string
 	DefaultOrgSlug          string
@@ -18,6 +19,7 @@ type Config struct {
 func Load() (Config, error) {
 	cfg := Config{
 		FirebaseCredentialsJSON: strings.TrimSpace(os.Getenv("FIREBASE_CREDENTIALS_JSON")),
+		FirebaseDatabaseURL:     strings.TrimSpace(os.Getenv("FIREBASE_DATABASE_URL")),
 		DiscordWebhookURL:       strings.TrimSpace(os.Getenv("DISCORD_WEBHOOK_URL")),
 		DefaultOrgName:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_NAME")),
 		DefaultOrgSlug:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
@@ -35,6 +37,8 @@ func Load() (Config, error) {
 	switch {
 	case cfg.FirebaseCredentialsJSON == "":
 		return Config{}, errors.New("FIREBASE_CREDENTIALS_JSON is required")
+	case cfg.FirebaseDatabaseURL == "":
+		return Config{}, errors.New("FIREBASE_DATABASE_URL is required")
 	case cfg.DiscordWebhookURL == "":
 		return Config{}, errors.New("DISCORD_WEBHOOK_URL is required")
 	}

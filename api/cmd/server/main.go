@@ -52,16 +52,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Firestore client for data storage.
-	fsClient, err := fbApp.Firestore(ctx)
+	// Realtime Database client for data storage.
+	dbClient, err := fbApp.DatabaseWithURL(ctx, cfg.FirebaseDatabaseURL)
 	if err != nil {
-		logger.Error("failed to initialize Firestore client", slog.Any("error", err))
+		logger.Error("failed to initialize Realtime Database client", slog.Any("error", err))
 		os.Exit(1)
 	}
-	defer fsClient.Close()
-	logger.Info("firebase initialized (auth + firestore)")
+	logger.Info("firebase initialized (auth + realtime database)")
 
-	store := repository.New(fsClient)
+	store := repository.New(dbClient)
 	webhook := discord.NewWebhookClient(cfg.DiscordWebhookURL)
 	verifier := auth.NewFirebaseVerifier(authClient)
 	service := usecase.NewService(store, webhook, logger, cfg)
@@ -83,11 +82,11 @@ func main() {
 	strictHandler := oapi.NewStrictHandler(server, nil)
 	oapi.RegisterHandlers(e, strictHandler)
 
-	// Simple API endpoints (docs/backend-api-request.md) backed by Firestore.
+	// Simple API endpoints (docs/backend-api-request.md) backed by Realtime Database.
 	simpleGroup := e.Group("/api/v1")
-	simpleapi.RegisterTaskRoutes(simpleGroup, fsClient)
-	simpleapi.RegisterMeetingRoutes(simpleGroup, fsClient)
-	simpleapi.RegisterPublicityRoutes(simpleGroup, fsClient)
+	simpleapi.RegisterTaskRoutes(simpleGroup, dbClient)
+	simpleapi.RegisterMeetingRoutes(simpleGroup, dbClient)
+	simpleapi.RegisterPublicityRoutes(simpleGroup, dbClient)
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%s", cfg.Port),

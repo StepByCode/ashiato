@@ -107,7 +107,7 @@ func (s *Service) SyncPrincipal(ctx context.Context, principal domain.Principal)
 		UserID:         userID,
 		OrganizationID: orgID,
 		Role:           member.Role,
-		Subject:        user.OIDCSubject,
+		Subject:        user.FirebaseUID,
 		Email:          user.Email,
 		Name:           user.Name,
 	}, nil

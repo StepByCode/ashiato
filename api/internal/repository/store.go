@@ -73,7 +73,7 @@ func (s *Store) GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organiza
 // --- Users ---
 
 type UserDoc struct {
-	OIDCSubject string `json:"oidc_subject"`
+	FirebaseUID string `json:"firebase_uid"`
 	Email       string `json:"email"`
 	Name        string `json:"name"`
 	CreatedAt   string `json:"created_at"`
@@ -87,7 +87,7 @@ func (s *Store) UpsertUser(ctx context.Context, subject, email, name string) (uu
 		return uuid.Nil, UserDoc{}, err
 	}
 	for idStr, user := range all {
-		if user.OIDCSubject == subject {
+		if user.FirebaseUID == subject {
 			user.Email = email
 			user.Name = name
 			user.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -104,7 +104,7 @@ func (s *Store) UpsertUser(ctx context.Context, subject, email, name string) (uu
 
 	id := uuid.New()
 	now := time.Now().UTC().Format(time.RFC3339)
-	user := UserDoc{OIDCSubject: subject, Email: email, Name: name, CreatedAt: now, UpdatedAt: now}
+	user := UserDoc{FirebaseUID: subject, Email: email, Name: name, CreatedAt: now, UpdatedAt: now}
 	if err := ref.Child(id.String()).Set(ctx, user); err != nil {
 		return uuid.Nil, UserDoc{}, err
 	}

@@ -1,10 +1,9 @@
 import type { NextConfig } from "next";
+import { resolve } from "path";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  turbopack: {
-    root: process.cwd(),
-  },
+  outputFileTracingRoot: resolve(__dirname),
 };
 
 export default nextConfig;

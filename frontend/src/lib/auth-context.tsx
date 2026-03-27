@@ -7,8 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { getFirebaseAuth, isFirebaseConfigured } from "./firebase";
+import type { User } from "firebase/auth";
 
 type AuthState = {
   user: User | null;
@@ -26,16 +25,32 @@ const AuthContext = createContext<AuthState>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(isFirebaseConfigured);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const auth = getFirebaseAuth();
-    if (!auth) return;
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return unsubscribe;
+    let unsubscribe: (() => void) | undefined;
+
+    (async () => {
+      const { getFirebaseAuth, isFirebaseConfigured } = await import(
+        "./firebase"
+      );
+      if (!isFirebaseConfigured) {
+        setLoading(false);
+        return;
+      }
+      const auth = await getFirebaseAuth();
+      if (!auth) {
+        setLoading(false);
+        return;
+      }
+      const { onAuthStateChanged } = await import("firebase/auth");
+      unsubscribe = onAuthStateChanged(auth, (u) => {
+        setUser(u);
+        setLoading(false);
+      });
+    })();
+
+    return () => unsubscribe?.();
   }, []);
 
   const getIdToken = async () => {
@@ -44,8 +59,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    const auth = getFirebaseAuth();
-    if (auth) await signOut(auth);
+    const { getFirebaseAuth } = await import("./firebase");
+    const auth = await getFirebaseAuth();
+    if (auth) {
+      const { signOut } = await import("firebase/auth");
+      await signOut(auth);
+    }
   };
 
   return (

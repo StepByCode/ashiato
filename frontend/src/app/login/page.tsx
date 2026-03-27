@@ -1,9 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { getFirebaseAuth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import "./login.css";
@@ -27,7 +25,9 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      const auth = getFirebaseAuth();
+      const { getFirebaseAuth } = await import("@/lib/firebase");
+      const { signInWithEmailAndPassword } = await import("firebase/auth");
+      const auth = await getFirebaseAuth();
       if (!auth) {
         setError("Firebase が設定されていません");
         return;

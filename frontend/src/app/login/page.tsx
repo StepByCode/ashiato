@@ -5,6 +5,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { getFirebaseAuth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
+import { apiFetch } from "@/lib/api";
 import "./login.css";
 
 export default function LoginPage() {
@@ -31,7 +32,26 @@ export default function LoginPage() {
         setError("Firebase が設定されていません");
         return;
       }
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+
+      // Check if profile exists, redirect to setup if not
+      try {
+        const uid = credential.user.uid;
+        const res = await apiFetch(`/api/v1/profile/${uid}`, null);
+        if (res.ok) {
+          const profile = await res.json();
+          if (!profile.name) {
+            router.replace("/profile-setup");
+            return;
+          }
+        } else {
+          router.replace("/profile-setup");
+          return;
+        }
+      } catch {
+        // API unreachable, go to home
+      }
+
       router.replace("/");
     } catch {
       setError("メールアドレスまたはパスワードが正しくありません");

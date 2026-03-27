@@ -32,7 +32,7 @@ export default function HomePage() {
           <span>{user.email}</span>
           <button
             type="button"
-            onClick={() => router.push("/members")}
+            onClick={() => router.push("/settings")}
             style={{
               fontSize: "0.8125rem",
               padding: "0.25rem 0.75rem",
@@ -43,7 +43,7 @@ export default function HomePage() {
               color: "var(--letter)",
             }}
           >
-            メンバー管理
+            設定
           </button>
           <button
             type="button"

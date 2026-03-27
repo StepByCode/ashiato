@@ -53,7 +53,7 @@ type CreateTaskInput struct {
 	Month        int32
 }
 
-var defaultTaskTitles = []string{"イベント名", "connpassURL", "Place"}
+var defaultTaskTitles = []string{"イベント名", "connpass URL", "Place"}
 
 type UpdateTaskInput struct {
 	ID           uuid.UUID

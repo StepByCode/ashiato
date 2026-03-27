@@ -42,7 +42,7 @@ var requiredTasks = []struct {
 	FixedWithoutAssign bool
 }{
 	{Title: "イベント名", AssigneeRequired: false, FixedWithoutAssign: true},
-	{Title: "connpassURL", AssigneeRequired: true},
+	{Title: "connpass URL", AssigneeRequired: true},
 	{Title: "Place", AssigneeRequired: true},
 }
 

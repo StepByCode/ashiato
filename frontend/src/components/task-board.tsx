@@ -32,9 +32,11 @@ type Member = {
 
 const fixedTasks = [
   { title: "イベント名", assigneeRequired: false },
-  { title: "connpassURL", assigneeRequired: true },
+  { title: "connpass URL", assigneeRequired: true },
   { title: "Place", assigneeRequired: true },
 ] as const;
+
+const fixedTaskOrder = new Map<string, number>(fixedTasks.map((task, index) => [task.title, index]));
 
 const taskStateLabels: Record<TaskState, string> = {
   in_progress: "in progress",
@@ -58,6 +60,36 @@ const stateMeta: Record<
     cardClassName: "border-emerald-300/60 bg-[var(--surface-success)]",
   },
 };
+
+function sortTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((left, right) => {
+    const leftIndex = fixedTaskOrder.get(left.title);
+    const rightIndex = fixedTaskOrder.get(right.title);
+    const leftFixed = leftIndex !== undefined;
+    const rightFixed = rightIndex !== undefined;
+
+    if (leftFixed && rightFixed) return leftIndex - rightIndex;
+    if (leftFixed) return -1;
+    if (rightFixed) return 1;
+
+    return left.title.localeCompare(right.title, "ja");
+  });
+}
+
+function tasksEqual(left: Task[], right: Task[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((task, index) => {
+    const other = right[index];
+    return (
+      task.id === other.id &&
+      task.title === other.title &&
+      task.assigneeId === other.assigneeId &&
+      task.assigneeName === other.assigneeName &&
+      task.state === other.state &&
+      task.url === other.url
+    );
+  });
+}
 
 export function TaskBoard() {
   const { getIdToken } = useAuth();
@@ -85,15 +117,15 @@ export function TaskBoard() {
       const res = await apiFetch(`/api/v1/tasks?year=${year}&month=${month}`, null);
       if (res.ok) {
         const data = await res.json();
-        const fetched = (data.tasks ?? []).map((t: Record<string, string>) => ({
+        const fetched = sortTasks((data.tasks ?? []).map((t: Record<string, string>) => ({
           id: t.id,
           title: t.title,
           assigneeId: t.assigneeId ?? "",
           assigneeName: t.assigneeName ?? "",
           state: t.state as TaskState,
           url: t.url ?? "",
-        }));
-        setTasks(fetched);
+        })));
+        setTasks((prev) => (tasksEqual(prev, fetched) ? prev : fetched));
         setHasLoadedTasks(true);
       }
     } catch {
@@ -172,7 +204,7 @@ export function TaskBoard() {
       if (res.ok) {
         const data = await res.json();
         const t = data.task;
-        setTasks((prev) => [
+        setTasks((prev) => sortTasks([
           ...prev,
           {
             id: t.id,
@@ -182,7 +214,7 @@ export function TaskBoard() {
             state: t.state as TaskState,
             url: t.url ?? "",
           },
-        ]);
+        ]));
         setNewTitle("");
         setNewAssigneeId("");
         setCreateOpen(false);
@@ -290,7 +322,8 @@ export function TaskBoard() {
     <WorkflowShell activeStep="作成">
       <section className="grid gap-4">
         {tasks.map((task) => {
-          const showApprove = task.state === "done" || task.state === "approved";
+          const isEventNameTask = task.title === "イベント名";
+          const showApprove = !isEventNameTask && (task.state === "done" || task.state === "approved");
           const isApproved = task.state === "approved";
           const isDoneLike = task.state !== "in_progress";
           const isApproveConfirmOpen =
@@ -322,23 +355,25 @@ export function TaskBoard() {
                       <h3 className="min-w-0 break-words text-2xl font-semibold tracking-tight sm:text-3xl">
                         {task.title}
                       </h3>
-                      <div className="relative w-full sm:max-w-60">
-                        <select
-                          id={`${task.id}-assignee`}
-                          className="h-12 w-full appearance-none rounded-full border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
-                          aria-label={`${task.title}担当者`}
-                          value={task.assigneeId}
-                          onChange={(e) => updateAssignee(task.id, e.target.value)}
-                        >
-                          {allowEmptyAssignee ? <option value="">担当者なし</option> : <option value="">担当者</option>}
-                          {members.map((member) => (
-                            <option key={member.id} value={member.id}>
-                              {member.name || member.email}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                      </div>
+                      {!isEventNameTask ? (
+                        <div className="relative w-full sm:max-w-60">
+                          <select
+                            id={`${task.id}-assignee`}
+                            className="h-12 w-full appearance-none rounded-full border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
+                            aria-label={`${task.title}担当者`}
+                            value={task.assigneeId}
+                            onChange={(e) => updateAssignee(task.id, e.target.value)}
+                          >
+                            {allowEmptyAssignee ? <option value="">担当者なし</option> : <option value="">担当者</option>}
+                            {members.map((member) => (
+                              <option key={member.id} value={member.id}>
+                                {member.name || member.email}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -477,7 +512,7 @@ export function TaskBoard() {
           );
         })}
 
-        <Card className="rounded-[1.75rem] border-border/70 bg-[var(--surface-panel)] max-[900px]:hidden">
+        <Card className="rounded-[1.75rem] border-border/70 bg-[var(--surface-panel)]">
           <CardContent className="p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-xl font-semibold tracking-tight">追加</h3>
@@ -485,7 +520,7 @@ export function TaskBoard() {
               <Button
                 type="button"
                 variant={isCreateOpen ? "secondary" : "default"}
-                className="min-h-12 rounded-full px-5 text-base font-semibold shadow-sm max-[900px]:hidden"
+                className="min-h-12 rounded-full px-5 text-base font-semibold shadow-sm"
                 aria-expanded={isCreateOpen}
                 aria-controls="create-form-box"
                 onClick={() => setCreateOpen((prev) => !prev)}

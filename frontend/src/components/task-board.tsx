@@ -44,10 +44,10 @@ const stateMeta: Record<
     cardClassName: "border-border/70 bg-card/95",
   },
   done: {
-    cardClassName: "border-[var(--success)] bg-[var(--success)]",
+    cardClassName: "border-[var(--success)] bg-[var(--success)] dark:border-[#4F7F5D] dark:bg-[#4F7F5D]",
   },
   approved: {
-    cardClassName: "border-emerald-300/60 bg-[var(--surface-success)]",
+    cardClassName: "border-emerald-300/60 bg-[var(--surface-success)] dark:border-[#5E936C] dark:bg-[#3E5F44]",
   },
 };
 
@@ -118,7 +118,7 @@ export function TaskBoard() {
 
   return (
     <WorkflowShell activeStep="作成">
-      <section className="grid gap-4">
+      <section className="grid gap-2.5 lg:gap-2">
         {tasks.map((task) => {
           const showApprove = task.owner !== "nakai" && (task.state === "done" || task.state === "approved");
           const isApproved = task.state === "approved";
@@ -128,6 +128,7 @@ export function TaskBoard() {
           const isDoneConfirmOpen =
             pendingAction?.taskId === task.id &&
             (pendingAction.type === "mark_done" || pendingAction.type === "mark_in_progress");
+          const needsWideActionPanel = isApproveConfirmOpen || isDoneConfirmOpen;
           const taskStateMeta = stateMeta[task.state];
           const jumpHref = toJumpHref(task.url);
           const pendingCopy =
@@ -142,17 +143,17 @@ export function TaskBoard() {
               key={task.id}
               className={cn("overflow-hidden rounded-[1.75rem] border-2 shadow-sm", taskStateMeta.cardClassName)}
             >
-              <CardContent className="space-y-5 p-5 sm:p-6">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0 flex-1 space-y-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <h3 className="min-w-0 break-words text-2xl font-semibold tracking-tight sm:text-3xl">
+              <CardContent className="space-y-2.5 p-3.5 sm:p-4">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1 space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <h3 className="min-w-0 flex-1 break-words text-lg font-semibold tracking-tight sm:text-xl">
                         {task.title}
                       </h3>
-                      <div className="relative w-full sm:max-w-60">
+                      <div className="relative ml-auto w-32 shrink-0 sm:w-40 lg:ml-auto lg:w-36">
                         <select
                           id={`${task.id}-owner`}
-                          className="h-12 w-full appearance-none rounded-full border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
+                          className="h-10 w-full appearance-none rounded-full border border-border/70 bg-background/85 px-4 pr-10 text-sm font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15 lg:px-3 lg:pr-8 lg:text-xs"
                           aria-label={`${task.title}担当者`}
                           value={task.owner}
                           onChange={(e) => updateOwner(task.id, e.target.value as Owner)}
@@ -168,15 +169,25 @@ export function TaskBoard() {
                     </div>
                   </div>
 
-                  <div className="flex w-full flex-col gap-2 xl:min-w-[240px] xl:max-w-[280px] xl:items-end">
+                  <div
+                    className={cn(
+                      "flex w-full flex-col gap-1.5 lg:items-end",
+                      needsWideActionPanel
+                        ? "lg:min-w-[200px] lg:max-w-[220px]"
+                        : "lg:w-36 lg:min-w-0 lg:max-w-36"
+                    )}
+                  >
                     {showApprove ? (
                       <>
                         <Button
                           type="button"
                           variant={isApproved ? "secondary" : "default"}
                           className={cn(
-                            "min-h-12 w-full rounded-full px-5 text-base font-semibold shadow-sm",
-                            isApproved && "bg-emerald-100 text-emerald-900 hover:bg-emerald-100"
+                            "h-10 w-full rounded-full px-4 text-sm font-semibold shadow-sm",
+                            !isApproved &&
+                              "dark:bg-[#5E936C] dark:text-white dark:hover:bg-[#5E936C]",
+                            isApproved &&
+                              "bg-emerald-100 text-emerald-900 hover:bg-emerald-100 dark:bg-[#5E936C] dark:text-white dark:hover:bg-[#5E936C]"
                           )}
                           disabled={isApproved}
                           onClick={() => {
@@ -188,20 +199,20 @@ export function TaskBoard() {
                         </Button>
 
                         {isApproveConfirmOpen ? (
-                          <div className="grid w-full gap-2 rounded-[1.25rem] border border-border/70 bg-popover/95 p-3 text-sm font-medium shadow-sm">
+                          <div className="grid w-full gap-1.5 rounded-[1.1rem] border border-border/70 bg-popover/95 p-2 text-xs font-medium shadow-sm">
                             <span className="whitespace-nowrap text-foreground">{pendingCopy}</span>
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 type="button"
                                 variant="outline"
-                                className="h-10 rounded-full px-4 text-sm font-semibold"
+                                className="h-8 rounded-full px-3 text-xs font-semibold"
                                 onClick={() => setPendingAction(null)}
                               >
                                 いいえ
                               </Button>
                               <Button
                                 type="button"
-                                className="h-10 rounded-full px-4 text-sm font-semibold"
+                                className="h-8 rounded-full px-3 text-xs font-semibold"
                                 onClick={() => runPendingAction(task.id, "approve")}
                               >
                                 はい
@@ -215,7 +226,12 @@ export function TaskBoard() {
                         <Button
                           type="button"
                           variant={isDoneLike ? "secondary" : "default"}
-                          className="min-h-12 w-full rounded-full px-5 text-base font-semibold shadow-sm"
+                          className={cn(
+                            "h-10 w-full rounded-full px-4 text-sm font-semibold shadow-sm lg:w-36 lg:px-3 lg:text-xs",
+                            isDoneLike && "dark:bg-[#6AA678] dark:text-white dark:hover:bg-[#6AA678]",
+                            !isDoneLike &&
+                              "dark:border dark:border-border/70 dark:bg-[var(--surface-button)] dark:text-foreground dark:hover:bg-[var(--surface-button-subtle)]"
+                          )}
                           onClick={() => {
                             if (isDoneLike) {
                               setPendingAction({ taskId: task.id, type: "mark_in_progress" });
@@ -229,20 +245,20 @@ export function TaskBoard() {
                         </Button>
 
                         {isDoneConfirmOpen ? (
-                          <div className="grid w-full gap-2 rounded-[1.25rem] border border-border/70 bg-popover/95 p-3 text-sm font-medium shadow-sm">
+                          <div className="grid w-full gap-1.5 rounded-[1.1rem] border border-border/70 bg-popover/95 p-2 text-xs font-medium shadow-sm">
                             <span className="whitespace-nowrap text-foreground">{pendingCopy}</span>
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 type="button"
                                 variant="outline"
-                                className="h-10 rounded-full px-4 text-sm font-semibold"
+                                className="h-8 rounded-full px-3 text-xs font-semibold"
                                 onClick={() => setPendingAction(null)}
                               >
                                 いいえ
                               </Button>
                               <Button
                                 type="button"
-                                className="h-10 rounded-full px-4 text-sm font-semibold"
+                                className="h-8 rounded-full px-3 text-xs font-semibold"
                                 onClick={() =>
                                   runPendingAction(
                                     task.id,
@@ -257,18 +273,18 @@ export function TaskBoard() {
                         ) : null}
                       </>
                     ) : (
-                      <div className="flex min-h-12 w-full items-center justify-center rounded-full border border-border/70 px-5 text-sm font-semibold">
+                      <div className="flex h-10 w-full items-center justify-center rounded-full border border-border/70 px-4 text-xs font-semibold lg:w-36 lg:px-3">
                         in progress
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
                   <div>
                     <Input
                       id={`${task.id}-url`}
-                      className="h-12 rounded-2xl border-border/70 bg-background/85 px-4 text-[color:var(--url-color)] shadow-sm placeholder:text-[color:var(--url-color)] placeholder:opacity-60"
+                      className="h-10 rounded-xl border-border/70 bg-background/85 px-4 text-sm text-[color:var(--url-color)] shadow-sm placeholder:text-[color:var(--url-color)] placeholder:opacity-60"
                       type="url"
                       placeholder="URL"
                       value={task.url}
@@ -280,7 +296,7 @@ export function TaskBoard() {
                     <a
                       className={cn(
                         buttonVariants({ variant: "outline" }),
-                        "min-h-12 rounded-2xl px-5 text-base font-semibold shadow-sm"
+                        "h-10 rounded-xl px-4 text-sm font-semibold shadow-sm dark:border-[#5E936C] dark:bg-[#5E936C] dark:text-white dark:hover:bg-[#5E936C]"
                       )}
                       href={jumpHref}
                       target="_blank"
@@ -290,7 +306,7 @@ export function TaskBoard() {
                       <ExternalLink className="size-4" />
                     </a>
                   ) : (
-                    <div className="flex min-h-12 items-center justify-center rounded-2xl border border-dashed border-border/70 px-5 text-sm font-medium text-muted-foreground">
+                    <div className="flex h-10 items-center justify-center rounded-xl border border-dashed border-border/70 px-4 text-xs font-medium text-muted-foreground">
                       URL
                     </div>
                   )}
@@ -301,14 +317,14 @@ export function TaskBoard() {
         })}
 
         <Card className="rounded-[1.75rem] border-border/70 bg-[var(--surface-panel)] max-[900px]:hidden">
-          <CardContent className="p-5 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-xl font-semibold tracking-tight">追加</h3>
+          <CardContent className="p-3.5 sm:p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-lg font-semibold tracking-tight">追加</h3>
 
               <Button
                 type="button"
                 variant={isCreateOpen ? "secondary" : "default"}
-                className="min-h-12 rounded-full px-5 text-base font-semibold shadow-sm max-[900px]:hidden"
+                className="h-10 rounded-full px-4 text-sm font-semibold shadow-sm max-[900px]:hidden dark:border dark:border-border/70 dark:bg-[var(--surface-button)] dark:text-foreground dark:hover:bg-[var(--surface-button-subtle)]"
                 aria-expanded={isCreateOpen}
                 aria-controls="create-form-box"
                 onClick={() => setCreateOpen((prev) => !prev)}
@@ -319,15 +335,15 @@ export function TaskBoard() {
             </div>
 
             {isCreateOpen ? (
-              <div id="create-form-box" className="pt-6">
+              <div id="create-form-box" className="pt-3">
                 <form
-                  className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(220px,0.9fr)_auto] lg:items-end"
+                  className="grid gap-2.5 lg:grid-cols-[minmax(0,1.5fr)_minmax(220px,0.9fr)_auto] lg:items-end"
                   onSubmit={handleCreateTask}
                 >
                   <div>
                     <Input
                       id="create-task-title"
-                      className="h-12 rounded-2xl border-border/70 bg-background/85 px-4 shadow-sm"
+                      className="h-10 rounded-xl border-border/70 bg-background/85 px-4 text-sm shadow-sm"
                       type="text"
                       placeholder="タスク名"
                       required
@@ -340,7 +356,7 @@ export function TaskBoard() {
                     <div className="relative">
                       <select
                         id="create-task-owner"
-                        className="h-12 w-full appearance-none rounded-2xl border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
+                        className="h-10 w-full appearance-none rounded-xl border border-border/70 bg-background/85 px-4 pr-10 text-sm font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
                         aria-label="新規作成の担当者"
                         required
                         value={newOwner}
@@ -357,7 +373,10 @@ export function TaskBoard() {
                     </div>
                   </div>
 
-                  <Button type="submit" className="min-h-12 rounded-2xl px-6 text-base font-semibold shadow-sm">
+                  <Button
+                    type="submit"
+                    className="h-10 rounded-xl px-5 text-sm font-semibold shadow-sm dark:border dark:border-border/70 dark:bg-[var(--surface-button)] dark:text-foreground dark:hover:bg-[var(--surface-button-subtle)]"
+                  >
                     作成
                   </Button>
                 </form>

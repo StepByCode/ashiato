@@ -20,6 +20,7 @@ import (
 	"github.com/dokkiitech/ashiato/api/internal/logging"
 	"github.com/dokkiitech/ashiato/api/internal/oapi"
 	"github.com/dokkiitech/ashiato/api/internal/repository"
+	"github.com/dokkiitech/ashiato/api/internal/simpleapi"
 	"github.com/dokkiitech/ashiato/api/internal/usecase"
 )
 
@@ -68,6 +69,12 @@ func main() {
 
 	strictHandler := oapi.NewStrictHandler(server, nil)
 	oapi.RegisterHandlers(e, strictHandler)
+
+	// Simple API endpoints (docs/backend-api-request.md)
+	simpleGroup := e.Group("/api/v1")
+	simpleapi.RegisterTaskRoutes(simpleGroup, store.Pool())
+	simpleapi.RegisterMeetingRoutes(simpleGroup, store.Pool())
+	simpleapi.RegisterPublicityRoutes(simpleGroup, store.Pool())
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%s", cfg.Port),

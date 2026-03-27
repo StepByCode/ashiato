@@ -51,11 +51,39 @@ func NewAuthenticator(verifier Verifier, syncer Syncer, botToken string) *Authen
 	return &Authenticator{verifier: verifier, syncer: syncer, botToken: botToken}
 }
 
+// isSimpleAPIPath returns true for endpoints defined in docs/backend-api-request.md
+// that do not require authentication in the current phase (暫定で認証不要).
+func isSimpleAPIPath(reqPath string) bool {
+	// Meeting & Publicity endpoints
+	if reqPath == "/api/v1/meeting" ||
+		strings.HasPrefix(reqPath, "/api/v1/publicity/") {
+		return true
+	}
+	// Task list/create: exact path /api/v1/tasks
+	if reqPath == "/api/v1/tasks" {
+		return true
+	}
+	// Task field updates: /api/v1/tasks/{id}/owner|url|state (5 segments after split)
+	if strings.HasPrefix(reqPath, "/api/v1/tasks/") {
+		suffix := strings.TrimPrefix(reqPath, "/api/v1/tasks/")
+		parts := strings.SplitN(suffix, "/", 2)
+		if len(parts) == 2 {
+			switch parts[1] {
+			case "owner", "url", "state":
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (a *Authenticator) Middleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			requestPath := c.Request().URL.Path
 			switch {
+			case isSimpleAPIPath(requestPath):
+				return next(c)
 			case strings.HasPrefix(requestPath, "/internal/"):
 				return a.authorizeBot(next, c)
 			case strings.HasPrefix(requestPath, "/api/"):

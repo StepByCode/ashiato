@@ -7,19 +7,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { Owner, Task, TaskState, useTaskStore } from "@/store/task-store";
 
 import { WorkflowShell } from "./workflow-shell";
-
-type Owner = "kido" | "kitahara" | "sogo" | "nakai";
-type TaskState = "in_progress" | "done" | "approved";
-
-type Task = {
-  id: string;
-  title: string;
-  owner: Owner;
-  state: TaskState;
-  url: string;
-};
 
 const owners: Owner[] = ["kido", "kitahara", "sogo", "nakai"];
 const taskStateLabels: Record<TaskState, string> = {
@@ -27,12 +17,6 @@ const taskStateLabels: Record<TaskState, string> = {
   done: "Done",
   approved: "Approved",
 };
-
-const initialTasks: Task[] = [
-  { id: "connpass", title: "connpass", owner: "kido", state: "in_progress", url: "" },
-  { id: "figma", title: "Figma", owner: "kitahara", state: "in_progress", url: "" },
-  { id: "place", title: "Place", owner: "nakai", state: "done", url: "" },
-];
 
 const stateMeta: Record<
   TaskState,
@@ -56,7 +40,7 @@ function makeTaskId() {
 }
 
 export function TaskBoard() {
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const { tasks, addTask, updateOwner: setOwner, updateUrl: setUrl, setTaskState: applyTaskState } = useTaskStore();
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newOwner, setNewOwner] = useState<Owner | "">("");
@@ -77,27 +61,27 @@ export function TaskBoard() {
       url: "",
     };
 
-    setTasks((prev) => [...prev, task]);
+    addTask(task);
     setNewTitle("");
     setNewOwner("");
     setCreateOpen(false);
   };
 
   const updateOwner = (id: string, owner: Owner) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, owner } : task)));
+    setOwner(id, owner);
   };
 
   const updateUrl = (id: string, url: string) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url } : task)));
+    setUrl(id, url);
   };
 
   const approveTask = (id: string) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, state: "approved" } : task)));
+    applyTaskState(id, "approved");
     setPendingAction(null);
   };
 
-  const setTaskState = (id: string, state: TaskState) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, state } : task)));
+  const changeTaskState = (id: string, state: TaskState) => {
+    applyTaskState(id, state);
   };
 
   const toJumpHref = (url: string) => {
@@ -112,7 +96,7 @@ export function TaskBoard() {
       return;
     }
 
-    setTaskState(taskId, type === "mark_in_progress" ? "in_progress" : "done");
+    changeTaskState(taskId, type === "mark_in_progress" ? "in_progress" : "done");
     setPendingAction(null);
   };
 

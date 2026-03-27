@@ -22,6 +22,21 @@ type ChannelCard = {
   state: ChannelState;
 };
 
+type TaskState = "in_progress" | "done" | "approved";
+
+const REQUIRED_CHANNELS: { id: ChannelId; name: string }[] = [
+  { id: "x", name: "X" },
+  { id: "instagram", name: "Instagram" },
+  { id: "facebook", name: "Facebook" },
+];
+
+const DEFAULT_CHANNELS: ChannelCard[] = REQUIRED_CHANNELS.map((rc) => ({
+  id: rc.id,
+  name: rc.name,
+  note: "",
+  state: "in_progress",
+}));
+
 const MAX_PUBLICITY_LENGTH = 140;
 const channelStateLabels: Record<ChannelState, string> = {
   in_progress: "in progress",
@@ -32,22 +47,16 @@ const channelStateMeta: Record<
   ChannelState,
   {
     cardClassName: string;
-    stateContainerClassName: string;
-    stateLabelClassName: string;
-    stateValueClassName: string;
+    surfaceClassName: string;
   }
 > = {
   in_progress: {
     cardClassName: "border-border/70 bg-card/95",
-    stateContainerClassName: "border-border/70 bg-background/80",
-    stateLabelClassName: "text-muted-foreground",
-    stateValueClassName: "text-foreground",
+    surfaceClassName: "border-border/70 bg-background/80",
   },
   done: {
     cardClassName: "border-emerald-300/60 bg-[var(--surface-success)]",
-    stateContainerClassName: "border-emerald-300/60 bg-emerald-100",
-    stateLabelClassName: "text-emerald-900/70",
-    stateValueClassName: "text-emerald-950",
+    surfaceClassName: "border-emerald-300/60 bg-emerald-50 dark:bg-emerald-900/30",
   },
 };
 
@@ -56,18 +65,19 @@ export function PublicityBoard() {
   const [template, setTemplate] = useState("");
   const [channels, setChannels] = useState<ChannelCard[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pendingAction, setPendingAction] = useState<{
-    channelId: ChannelId;
-    targetState: ChannelState;
-  } | null>(null);
+  const [creationDone, setCreationDone] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ channelId: ChannelId; targetState: ChannelState } | null>(null);
   const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async (year: number, month: number) => {
     setLoading(true);
+    setCreationDone(false);
+    setChannels(DEFAULT_CHANNELS);
     try {
-      const [templateRes, channelsRes] = await Promise.all([
+      const [templateRes, channelsRes, tasksRes] = await Promise.all([
         apiFetch(`/api/v1/publicity/template?year=${year}&month=${month}`, null),
         apiFetch(`/api/v1/publicity/channels?year=${year}&month=${month}`, null),
+        apiFetch(`/api/v1/tasks?year=${year}&month=${month}`, null),
       ]);
       if (templateRes.ok) {
         const data = await templateRes.json();
@@ -75,16 +85,44 @@ export function PublicityBoard() {
       }
       if (channelsRes.ok) {
         const data = await channelsRes.json();
-        const fetched = (data.channels ?? []).map((ch: Record<string, string>) => ({
-          id: ch.id as ChannelId,
-          name: ch.name,
-          note: ch.note ?? "",
-          state: ch.state as ChannelState,
-        }));
-        setChannels(fetched);
+        const fetched = new Map(
+          (data.channels ?? []).map((ch: Record<string, string>) => [
+            ch.id as ChannelId,
+            {
+              id: ch.id as ChannelId,
+              name: ch.name,
+              note: ch.note ?? "",
+              state: (ch.state as ChannelState) ?? "in_progress",
+            },
+          ])
+        );
+        const ensured = REQUIRED_CHANNELS.map((rc) => {
+          const existing = fetched.get(rc.id);
+          return (
+            existing ?? {
+              id: rc.id,
+              name: rc.name,
+              note: "",
+              state: "in_progress" as ChannelState,
+            }
+          );
+        });
+        setChannels(ensured);
+      } else {
+        setChannels(DEFAULT_CHANNELS);
+      }
+
+      if (tasksRes.ok) {
+        const data = await tasksRes.json();
+        const taskList: { state?: TaskState }[] = data.tasks ?? [];
+        const allCreationDone =
+          taskList.length > 0 && taskList.every((task) => task.state && task.state !== "in_progress");
+        setCreationDone(allCreationDone);
       }
     } catch {
       // API unreachable - show empty state
+      setCreationDone(false);
+      setChannels(DEFAULT_CHANNELS);
     } finally {
       setLoading(false);
     }
@@ -95,7 +133,8 @@ export function PublicityBoard() {
   }, [fetchData, selectedPeriod.year, selectedPeriod.month]);
 
   const templateLength = template.length;
-  const isWorkflowComplete = channels.length > 0 && channels.every((channel) => channel.state === "done");
+  const publicityDone = channels.length > 0 && channels.every((channel) => channel.state === "done");
+  const isWorkflowComplete = !loading && publicityDone && creationDone;
 
   const handleTemplateChange = (text: string) => {
     setTemplate(text);
@@ -179,7 +218,7 @@ export function PublicityBoard() {
             const meta = channelStateMeta[channel.state];
             const targetState = isDone ? "in_progress" : "done";
             const isConfirmOpen = pendingAction?.channelId === channel.id;
-            const pendingCopy = `（${channelStateLabels[targetState]}）に変更しますか？`;
+            const pendingCopy = `${channelStateLabels[targetState]} に変更しますか？`;
 
             return (
               <Card
@@ -187,11 +226,8 @@ export function PublicityBoard() {
                 className={cn("rounded-[1.75rem] border-2 shadow-sm transition-colors", meta.cardClassName)}
               >
                 <CardContent className="p-5 sm:p-6">
-                  <div className="mb-[10px] flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-2">
-                      <h4 className="text-2xl font-semibold tracking-tight">{channel.name}</h4>
-                      <p className="text-sm text-muted-foreground">{channel.note}</p>
-                    </div>
+                  <div className="mb-[10px] flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <h4 className="text-2xl font-semibold tracking-tight">{channel.name}</h4>
 
                     <Button
                       type="button"
@@ -200,24 +236,12 @@ export function PublicityBoard() {
                       onClick={() => setPendingAction({ channelId: channel.id, targetState })}
                     >
                       {isDone ? <RotateCcw className="size-4" /> : <CheckCheck className="size-4" />}
-                      {isDone ? "in progressに戻す" : "Doneにする"}
+                      Done
                     </Button>
                   </div>
 
-                  <div
-                    className={cn(
-                      "flex min-h-28 flex-col justify-center rounded-[1.5rem] border px-5 py-[5px] shadow-sm",
-                      isConfirmOpen ? "mb-[10px]" : "",
-                      meta.stateContainerClassName
-                    )}
-                  >
-                    <span className={cn("text-[1.75rem] font-semibold tracking-tight sm:text-[2.25rem]", meta.stateValueClassName)}>
-                      {isDone ? "Done" : "in progress"}
-                    </span>
-                  </div>
-
                   {isConfirmOpen ? (
-                    <div className="grid w-full gap-2 rounded-[1.25rem] border border-border/70 bg-popover/95 p-3 text-sm font-medium shadow-sm">
+                    <div className="mt-3 grid w-full gap-2 rounded-[1.25rem] border border-border/70 bg-popover/95 p-3 text-sm font-medium shadow-sm">
                       <span className="whitespace-nowrap text-foreground">{pendingCopy}</span>
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -238,6 +262,7 @@ export function PublicityBoard() {
                       </div>
                     </div>
                   ) : null}
+
                 </CardContent>
               </Card>
             );

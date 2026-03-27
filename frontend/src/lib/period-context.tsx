@@ -62,9 +62,7 @@ const PeriodContext = createContext<PeriodContextValue | null>(null);
 
 export function PeriodProvider({ children }: { children: ReactNode }) {
   const [periods, setPeriods] = useState<WorkflowPeriodData[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>(() => {
-    return loadSavedPeriod() ?? getDefaultPeriod();
-  });
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>(() => getDefaultPeriod());
   const [loading, setLoading] = useState(true);
 
   const fetchPeriods = useCallback(async () => {
@@ -104,6 +102,11 @@ export function PeriodProvider({ children }: { children: ReactNode }) {
   }, [selectedPeriod]);
 
   useEffect(() => {
+    // Apply saved period on client after hydration to avoid SSR/client mismatch.
+    const saved = loadSavedPeriod();
+    if (saved && !periodsEqual(saved, selectedPeriod)) {
+      setSelectedPeriod(saved);
+    }
     fetchPeriods();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

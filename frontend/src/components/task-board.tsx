@@ -14,6 +14,7 @@ import { WorkflowShell } from "./workflow-shell";
 
 type Owner = "kido" | "kitahara" | "sogo" | "nakai";
 type TaskState = "in_progress" | "done" | "approved";
+type PublicityState = "in_progress" | "done";
 
 type Task = {
   id: string;
@@ -51,6 +52,7 @@ export function TaskBoard() {
   const { selectedPeriod } = usePeriod();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
+  const [publicityDone, setPublicityDone] = useState(false);
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newOwner, setNewOwner] = useState<Owner | "">("");
@@ -82,9 +84,30 @@ export function TaskBoard() {
     }
   }, []);
 
+  const fetchPublicityStatus = useCallback(async (year: number, month: number) => {
+    setPublicityDone(false);
+    try {
+      const res = await apiFetch(`/api/v1/publicity/channels?year=${year}&month=${month}`, null);
+      if (res.ok) {
+        const data = await res.json();
+        const channels: { state?: PublicityState }[] = data.channels ?? [];
+        const allDone = channels.length > 0 && channels.every((channel) => channel.state === "done");
+        setPublicityDone(allDone);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    setPublicityDone(false);
+  }, []);
+
   useEffect(() => {
     fetchTasks(selectedPeriod.year, selectedPeriod.month);
-  }, [fetchTasks, selectedPeriod.year, selectedPeriod.month]);
+    fetchPublicityStatus(selectedPeriod.year, selectedPeriod.month);
+  }, [fetchPublicityStatus, fetchTasks, selectedPeriod.year, selectedPeriod.month]);
+
+  const isCreationDone = tasks.length > 0 && tasks.every((task) => task.state !== "in_progress");
+  const isWorkflowComplete = !loadingTasks && isCreationDone && publicityDone;
 
   const handleCreateTask = async (event: FormEvent) => {
     event.preventDefault();
@@ -172,7 +195,7 @@ export function TaskBoard() {
 
   if (loadingTasks) {
     return (
-      <WorkflowShell activeStep="作成">
+      <WorkflowShell activeStep="作成" isWorkflowComplete={isWorkflowComplete}>
         <div className="flex items-center justify-center py-20 text-muted-foreground">
           <Loader2 className="mr-2 size-5 animate-spin" />
           読み込み中...
@@ -182,7 +205,7 @@ export function TaskBoard() {
   }
 
   return (
-    <WorkflowShell activeStep="作成">
+    <WorkflowShell activeStep="作成" isWorkflowComplete={isWorkflowComplete}>
       <section className="grid gap-4">
         {tasks.map((task) => {
           const showApprove = task.owner !== "nakai" && (task.state === "done" || task.state === "approved");
@@ -198,9 +221,7 @@ export function TaskBoard() {
           const pendingCopy =
             pendingAction?.type === "approve"
               ? "Approveしますか？"
-              : `（${
-                  taskStateLabels[pendingAction?.type === "mark_in_progress" ? "in_progress" : "done"]
-                }）に変更しますか？`;
+              : `${taskStateLabels[pendingAction?.type === "mark_in_progress" ? "in_progress" : "done"]} に変更しますか？`;
 
           return (
             <Card
@@ -249,7 +270,7 @@ export function TaskBoard() {
                           }}
                         >
                           <CheckCheck className="size-4" />
-                          {isApproved ? "Approved" : "Approve"}
+                        Approve
                         </Button>
 
                         {isApproveConfirmOpen ? (
@@ -290,7 +311,7 @@ export function TaskBoard() {
                           }}
                         >
                           {isDoneLike ? <RotateCcw className="size-4" /> : <CheckCheck className="size-4" />}
-                          {isDoneLike ? "Done" : "in progress"}
+                          Done
                         </Button>
 
                         {isDoneConfirmOpen ? (

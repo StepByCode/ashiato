@@ -2,16 +2,12 @@ package auth
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/golang-jwt/jwt/v5"
+	fbauth "firebase.google.com/go/v4/auth"
 	"github.com/labstack/echo/v4"
 
-	"github.com/dokkiitech/ashiato/api/internal/config"
 	"github.com/dokkiitech/ashiato/api/internal/domain"
 	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
@@ -30,21 +26,42 @@ type Authenticator struct {
 	botToken string
 }
 
-func NewVerifier(ctx context.Context, cfg config.Config) (Verifier, error) {
-	switch cfg.AuthMode {
-	case config.AuthModeStub:
-		return &stubVerifier{secret: []byte(cfg.DevJWTSecret)}, nil
-	case config.AuthModeOIDC:
-		provider, err := oidc.NewProvider(ctx, cfg.OIDCIssuerURL)
-		if err != nil {
-			return nil, err
-		}
-		return &oidcVerifier{
-			verifier: provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID}),
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported auth mode: %s", cfg.AuthMode)
+type firebaseVerifier struct {
+	client *fbauth.Client
+}
+
+func NewFirebaseVerifier(client *fbauth.Client) Verifier {
+	return &firebaseVerifier{client: client}
+}
+
+func (f *firebaseVerifier) Verify(ctx context.Context, rawToken string) (domain.Principal, error) {
+	token, err := f.client.VerifyIDToken(ctx, rawToken)
+	if err != nil {
+		return domain.Principal{}, domain.NewAppError(domain.ErrorCodeUnauthorized, "invalid firebase token", err)
 	}
+
+	subject := token.UID
+	email, _ := token.Claims["email"].(string)
+	name, _ := token.Claims["name"].(string)
+	if name == "" {
+		name, _ = token.Claims["displayName"].(string)
+	}
+
+	if subject == "" {
+		return domain.Principal{}, domain.NewAppError(domain.ErrorCodeUnauthorized, "missing uid in token", nil)
+	}
+	if email == "" {
+		return domain.Principal{}, domain.NewAppError(domain.ErrorCodeUnauthorized, "missing email in token", nil)
+	}
+	if name == "" {
+		name = email
+	}
+
+	return domain.Principal{
+		Subject: subject,
+		Email:   strings.ToLower(email),
+		Name:    name,
+	}, nil
 }
 
 func NewAuthenticator(verifier Verifier, syncer Syncer, botToken string) *Authenticator {
@@ -54,16 +71,13 @@ func NewAuthenticator(verifier Verifier, syncer Syncer, botToken string) *Authen
 // isSimpleAPIPath returns true for endpoints defined in docs/backend-api-request.md
 // that do not require authentication in the current phase (暫定で認証不要).
 func isSimpleAPIPath(reqPath string) bool {
-	// Meeting & Publicity endpoints
 	if reqPath == "/api/v1/meeting" ||
 		strings.HasPrefix(reqPath, "/api/v1/publicity/") {
 		return true
 	}
-	// Task list/create: exact path /api/v1/tasks
 	if reqPath == "/api/v1/tasks" {
 		return true
 	}
-	// Task field updates: /api/v1/tasks/{id}/owner|url|state (5 segments after split)
 	if strings.HasPrefix(reqPath, "/api/v1/tasks/") {
 		suffix := strings.TrimPrefix(reqPath, "/api/v1/tasks/")
 		parts := strings.SplitN(suffix, "/", 2)
@@ -142,82 +156,4 @@ func (a *Authenticator) authorizeBot(next echo.HandlerFunc, c echo.Context) erro
 		})
 	}
 	return next(c)
-}
-
-type stubVerifier struct {
-	secret []byte
-}
-
-func (s *stubVerifier) Verify(_ context.Context, rawToken string) (domain.Principal, error) {
-	token, err := jwt.Parse(rawToken, func(token *jwt.Token) (any, error) {
-		if token.Method != jwt.SigningMethodHS256 {
-			return nil, errors.New("unsupported signing method")
-		}
-		return s.secret, nil
-	})
-	if err != nil || !token.Valid {
-		return domain.Principal{}, errors.New("invalid stub token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return domain.Principal{}, errors.New("invalid stub claims")
-	}
-
-	return principalFromMapClaims(claims)
-}
-
-type oidcVerifier struct {
-	verifier *oidc.IDTokenVerifier
-}
-
-func (o *oidcVerifier) Verify(ctx context.Context, rawToken string) (domain.Principal, error) {
-	idToken, err := o.verifier.Verify(ctx, rawToken)
-	if err != nil {
-		return domain.Principal{}, errors.New("invalid oidc token")
-	}
-
-	claims := map[string]any{}
-	if err := idToken.Claims(&claims); err != nil {
-		return domain.Principal{}, errors.New("invalid oidc claims")
-	}
-
-	return principalFromClaimsMap(claims)
-}
-
-func principalFromMapClaims(claims jwt.MapClaims) (domain.Principal, error) {
-	plain := map[string]any{}
-	for key, value := range claims {
-		plain[key] = value
-	}
-	return principalFromClaimsMap(plain)
-}
-
-func principalFromClaimsMap(claims map[string]any) (domain.Principal, error) {
-	subject := strings.TrimSpace(asString(claims["sub"]))
-	email := strings.TrimSpace(asString(claims["email"]))
-	name := strings.TrimSpace(asString(claims["name"]))
-	if name == "" {
-		name = strings.TrimSpace(asString(claims["preferred_username"]))
-	}
-
-	switch {
-	case subject == "":
-		return domain.Principal{}, errors.New("missing sub claim")
-	case email == "":
-		return domain.Principal{}, errors.New("missing email claim")
-	case name == "":
-		return domain.Principal{}, errors.New("missing name claim")
-	}
-
-	return domain.Principal{
-		Subject: subject,
-		Email:   strings.ToLower(email),
-		Name:    name,
-	}, nil
-}
-
-func asString(value any) string {
-	text, _ := value.(string)
-	return text
 }

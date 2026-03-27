@@ -34,24 +34,32 @@ func main() {
 	}
 
 	logger := logging.NewLogger()
-	store, err := repository.Open(ctx, cfg.DatabaseURL)
+
+	// Initialize Firebase App (uses GOOGLE_APPLICATION_CREDENTIALS).
+	fbApp, err := firebase.NewApp(ctx, nil)
 	if err != nil {
-		logger.Error("failed to connect database", slog.Any("error", err))
-		os.Exit(1)
-	}
-	defer store.Close()
-
-	if err := store.Migrate(ctx); err != nil {
-		logger.Error("failed to apply migrations", slog.Any("error", err))
+		logger.Error("failed to initialize Firebase app", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	verifier, err := auth.NewVerifier(ctx, cfg)
+	// Firebase Auth client for token verification.
+	authClient, err := fbApp.Auth(ctx)
 	if err != nil {
-		logger.Error("failed to initialize auth verifier", slog.Any("error", err))
+		logger.Error("failed to initialize Firebase Auth client", slog.Any("error", err))
 		os.Exit(1)
 	}
 
+	// Firestore client for data storage.
+	fsClient, err := fbApp.Firestore(ctx)
+	if err != nil {
+		logger.Error("failed to initialize Firestore client", slog.Any("error", err))
+		os.Exit(1)
+	}
+	defer fsClient.Close()
+	logger.Info("firebase initialized (auth + firestore)")
+
+	store := repository.New(fsClient)
+	verifier := auth.NewFirebaseVerifier(authClient)
 	service := usecase.NewService(store, logger, cfg)
 	authenticator := auth.NewAuthenticator(verifier, service, cfg.BotSharedToken)
 	server := handler.NewServer(service)
@@ -71,21 +79,7 @@ func main() {
 	strictHandler := oapi.NewStrictHandler(server, nil)
 	oapi.RegisterHandlers(e, strictHandler)
 
-	// Simple API endpoints (docs/backend-api-request.md) backed by Firebase/Firestore.
-	// Uses GOOGLE_APPLICATION_CREDENTIALS for authentication (Application Default Credentials).
-	fbApp, err := firebase.NewApp(ctx, nil)
-	if err != nil {
-		logger.Error("failed to initialize Firebase app", slog.Any("error", err))
-		os.Exit(1)
-	}
-	fsClient, err := fbApp.Firestore(ctx)
-	if err != nil {
-		logger.Error("failed to initialize Firestore client", slog.Any("error", err))
-		os.Exit(1)
-	}
-	defer fsClient.Close()
-	logger.Info("firebase/firestore initialized")
-
+	// Simple API endpoints (docs/backend-api-request.md) backed by Firestore.
 	simpleGroup := e.Group("/api/v1")
 	simpleapi.RegisterTaskRoutes(simpleGroup, fsClient)
 	simpleapi.RegisterMeetingRoutes(simpleGroup, fsClient)

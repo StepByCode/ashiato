@@ -46,3 +46,14 @@ frontend/
 - `../doc/03_screen-flow.md`
 - `../doc/04_permission-design.md`
 - `../doc/06_directory.md`
+
+
+## Pencil
+
+Pencil は VS Code 拡張 `highagency.pencildev` を使ってこのリポジトリで利用します。
+
+- ルートの `ashiato.pen` を VS Code で開くと、Pencil のキャンバスとして使えます
+- AI 連携はローカルの `claude` CLI を使う前提です。この環境では導入済みです
+- `.vscode/extensions.json` に推奨拡張を入れてあるので、VS Code でワークスペースを開くと Pencil を案内できます
+- 既存の画面トークンに合わせるときは `frontend/src/app/globals.css` の CSS 変数を参照してください
+- 拡張が見えない場合は VS Code を再起動するか、拡張一覧で `Pencil` を有効化してください

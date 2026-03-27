@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCheck, Megaphone, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCheck, Loader2, Megaphone, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 
 import { WorkflowShell } from "./workflow-shell";
 
@@ -25,13 +26,6 @@ const channelStateLabels: Record<ChannelState, string> = {
   in_progress: "in progress",
   done: "Done",
 };
-const initialTemplate =
-  "【イベント告知】4/10(金) 20:00から定例を開催します。参加URLはプロフィールから確認できます。初参加の方も歓迎です。";
-const initialChannels: ChannelCard[] = [
-  { id: "x", name: "X", note: "投稿文の最終チェック", state: "in_progress" },
-  { id: "instagram", name: "Instagram", note: "画像差し替えとキャプション確認", state: "in_progress" },
-  { id: "facebook", name: "Facebook", note: "イベントページ反映確認", state: "done" },
-];
 
 const channelStateMeta: Record<
   ChannelState,
@@ -57,29 +51,81 @@ const channelStateMeta: Record<
 };
 
 export function PublicityBoard() {
-  const [template, setTemplate] = useState(initialTemplate);
-  const [channels, setChannels] = useState(initialChannels);
+  const [template, setTemplate] = useState("");
+  const [channels, setChannels] = useState<ChannelCard[]>([]);
+  const [loading, setLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<{
     channelId: ChannelId;
     targetState: ChannelState;
   } | null>(null);
+  const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [templateRes, channelsRes] = await Promise.all([
+        apiFetch("/api/v1/publicity/template", null),
+        apiFetch("/api/v1/publicity/channels", null),
+      ]);
+      if (templateRes.ok) {
+        const data = await templateRes.json();
+        setTemplate(data.text ?? "");
+      }
+      if (channelsRes.ok) {
+        const data = await channelsRes.json();
+        const fetched = (data.channels ?? []).map((ch: Record<string, string>) => ({
+          id: ch.id as ChannelId,
+          name: ch.name,
+          note: ch.note ?? "",
+          state: ch.state as ChannelState,
+        }));
+        setChannels(fetched);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const templateLength = template.length;
-  const isWorkflowComplete = channels.every((channel) => channel.state === "done");
+  const isWorkflowComplete = channels.length > 0 && channels.every((channel) => channel.state === "done");
 
-  const updateChannelState = (id: ChannelId, state: ChannelState) => {
+  const handleTemplateChange = (text: string) => {
+    setTemplate(text);
+    if (templateTimer.current) clearTimeout(templateTimer.current);
+    templateTimer.current = setTimeout(async () => {
+      await apiFetch("/api/v1/publicity/template", null, {
+        method: "PATCH",
+        body: JSON.stringify({ text }),
+      });
+    }, 600);
+  };
+
+  const updateChannelState = async (id: ChannelId, state: ChannelState) => {
     setChannels((currentChannels) =>
       currentChannels.map((channel) =>
-        channel.id === id
-          ? {
-              ...channel,
-              state,
-            }
-          : channel
+        channel.id === id ? { ...channel, state } : channel
       )
     );
     setPendingAction(null);
+    await apiFetch(`/api/v1/publicity/channels/${id}/state`, null, {
+      method: "PATCH",
+      body: JSON.stringify({ state }),
+    });
   };
+
+  if (loading) {
+    return (
+      <WorkflowShell activeStep="広報">
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          <Loader2 className="mr-2 size-5 animate-spin" />
+          読み込み中...
+        </div>
+      </WorkflowShell>
+    );
+  }
 
   return (
     <WorkflowShell activeStep="広報" isWorkflowComplete={isWorkflowComplete}>
@@ -100,7 +146,7 @@ export function PublicityBoard() {
                 className="min-h-64 rounded-[1.5rem] border-border/70 bg-background/85 px-4 py-4 text-base leading-7 shadow-sm"
                 maxLength={MAX_PUBLICITY_LENGTH}
                 value={template}
-                onChange={(event) => setTemplate(event.target.value)}
+                onChange={(event) => handleTemplateChange(event.target.value)}
               />
 
               <div className="flex flex-col gap-2 rounded-[1.25rem] border border-border/70 bg-background/60 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">

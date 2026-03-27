@@ -23,6 +23,9 @@ type Config struct {
 	OwnerEmails      map[string]struct{}
 	BotSharedToken   string
 	Port             string
+	// Firebase configuration for Simple API
+	FirebaseSAKeyPath string // path to service account JSON key file
+	FirebaseProjectID string // Firebase project ID (can be auto-detected from SA key)
 }
 
 func Load() (Config, error) {
@@ -36,8 +39,10 @@ func Load() (Config, error) {
 		DefaultOrgName:   strings.TrimSpace(os.Getenv("DEFAULT_ORG_NAME")),
 		DefaultOrgSlug:   strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
 		OwnerEmails:      parseOwnerEmails(strings.TrimSpace(os.Getenv("OWNER_EMAILS"))),
-		BotSharedToken:   strings.TrimSpace(os.Getenv("BOT_SHARED_TOKEN")),
-		Port:             defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
+		BotSharedToken:    strings.TrimSpace(os.Getenv("BOT_SHARED_TOKEN")),
+		Port:              defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
+		FirebaseSAKeyPath: strings.TrimSpace(os.Getenv("FIREBASE_SA_KEY_PATH")),
+		FirebaseProjectID: strings.TrimSpace(os.Getenv("FIREBASE_PROJECT_ID")),
 	}
 
 	if cfg.AuthMode == "" {

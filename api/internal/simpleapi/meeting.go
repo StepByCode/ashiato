@@ -4,8 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+
+	"github.com/dokkiitech/ashiato/api/internal/firebase"
 )
 
 type MeetingResponse struct {
@@ -14,38 +15,47 @@ type MeetingResponse struct {
 	UpdatedAt string  `json:"updatedAt"`
 }
 
-func RegisterMeetingRoutes(g *echo.Group, pool *pgxpool.Pool) {
-	g.GET("/meeting", getMeetingHandler(pool))
-	g.PATCH("/meeting", patchMeetingHandler(pool))
+const (
+	meetingCollection = "meeting_settings"
+	meetingDocID      = "default"
+)
+
+func RegisterMeetingRoutes(g *echo.Group, fs *firebase.Firestore) {
+	g.GET("/meeting", getMeetingHandler(fs))
+	g.PATCH("/meeting", patchMeetingHandler(fs))
 }
 
-func getMeetingHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func docToMeeting(doc *firebase.Document) MeetingResponse {
+	f := doc.Fields
+	resp := MeetingResponse{
+		MeetURL:   firebase.GetStringField(f, "meetUrl"),
+		UpdatedAt: firebase.GetStringField(f, "updatedAt"),
+	}
+	if s := firebase.GetStringField(f, "meetingAt"); s != "" {
+		resp.MeetingAt = &s
+	}
+	return resp
+}
+
+func getMeetingHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		var meetingAt *time.Time
-		var meetURL string
-		var updatedAt time.Time
+		ctx := c.Request().Context()
 
-		err := pool.QueryRow(c.Request().Context(),
-			`SELECT meeting_at, meet_url, updated_at FROM meeting_settings WHERE id = 1`).
-			Scan(&meetingAt, &meetURL, &updatedAt)
+		doc, err := fs.Get(ctx, meetingCollection, meetingDocID)
 		if err != nil {
-			return internalError(c)
+			// If document doesn't exist yet, return empty defaults
+			now := time.Now().Format(time.RFC3339)
+			return c.JSON(http.StatusOK, MeetingResponse{
+				MeetURL:   "",
+				UpdatedAt: now,
+			})
 		}
 
-		resp := MeetingResponse{
-			MeetURL:   meetURL,
-			UpdatedAt: updatedAt.Format(time.RFC3339),
-		}
-		if meetingAt != nil {
-			s := meetingAt.Format(time.RFC3339)
-			resp.MeetingAt = &s
-		}
-
-		return c.JSON(http.StatusOK, resp)
+		return c.JSON(http.StatusOK, docToMeeting(doc))
 	}
 }
 
-func patchMeetingHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func patchMeetingHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	type request struct {
 		MeetingAt *string `json:"meetingAt"`
 		MeetURL   *string `json:"meetUrl"`
@@ -57,63 +67,53 @@ func patchMeetingHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 			return validationError(c, "body", "invalid JSON")
 		}
 
-		// Parse meetingAt if provided
-		var meetingAt *time.Time
-		if req.MeetingAt != nil {
-			t, err := time.Parse(time.RFC3339, *req.MeetingAt)
-			if err != nil {
+		// Validate meetingAt if provided
+		if req.MeetingAt != nil && *req.MeetingAt != "" {
+			if _, err := time.Parse(time.RFC3339, *req.MeetingAt); err != nil {
 				return validationError(c, "meetingAt", "must be ISO 8601 format")
 			}
-			meetingAt = &t
 		}
 
-		// Build update query dynamically based on provided fields
 		ctx := c.Request().Context()
+		now := time.Now().Format(time.RFC3339)
+		fields := map[string]interface{}{
+			"updatedAt": firebase.StringVal(now),
+		}
+		fieldPaths := []string{"updatedAt"}
 
-		if req.MeetingAt != nil && req.MeetURL != nil {
-			_, err := pool.Exec(ctx,
-				`UPDATE meeting_settings SET meeting_at = $1, meet_url = $2, updated_at = NOW() WHERE id = 1`,
-				meetingAt, *req.MeetURL)
-			if err != nil {
-				return internalError(c)
-			}
-		} else if req.MeetingAt != nil {
-			_, err := pool.Exec(ctx,
-				`UPDATE meeting_settings SET meeting_at = $1, updated_at = NOW() WHERE id = 1`,
-				meetingAt)
-			if err != nil {
-				return internalError(c)
-			}
-		} else if req.MeetURL != nil {
-			_, err := pool.Exec(ctx,
-				`UPDATE meeting_settings SET meet_url = $1, updated_at = NOW() WHERE id = 1`,
-				*req.MeetURL)
-			if err != nil {
-				return internalError(c)
-			}
+		if req.MeetingAt != nil {
+			fields["meetingAt"] = firebase.StringVal(*req.MeetingAt)
+			fieldPaths = append(fieldPaths, "meetingAt")
+		}
+		if req.MeetURL != nil {
+			fields["meetUrl"] = firebase.StringVal(*req.MeetURL)
+			fieldPaths = append(fieldPaths, "meetUrl")
 		}
 
-		// Return updated meeting
-		var retMeetingAt *time.Time
-		var retMeetURL string
-		var retUpdatedAt time.Time
+		// Ensure document exists first (upsert pattern)
+		doc, getErr := fs.Get(ctx, meetingCollection, meetingDocID)
+		if getErr != nil {
+			// Create with defaults + provided fields
+			allFields := map[string]interface{}{
+				"meetingAt": firebase.StringVal(""),
+				"meetUrl":   firebase.StringVal(""),
+				"updatedAt": firebase.StringVal(now),
+			}
+			for k, v := range fields {
+				allFields[k] = v
+			}
+			doc, err := fs.Set(ctx, meetingCollection, meetingDocID, allFields)
+			if err != nil {
+				return internalError(c)
+			}
+			return c.JSON(http.StatusOK, docToMeeting(doc))
+		}
 
-		err := pool.QueryRow(ctx,
-			`SELECT meeting_at, meet_url, updated_at FROM meeting_settings WHERE id = 1`).
-			Scan(&retMeetingAt, &retMeetURL, &retUpdatedAt)
+		doc, err := fs.Patch(ctx, meetingCollection, meetingDocID, fields, fieldPaths)
 		if err != nil {
 			return internalError(c)
 		}
 
-		resp := MeetingResponse{
-			MeetURL:   retMeetURL,
-			UpdatedAt: retUpdatedAt.Format(time.RFC3339),
-		}
-		if retMeetingAt != nil {
-			s := retMeetingAt.Format(time.RFC3339)
-			resp.MeetingAt = &s
-		}
-
-		return c.JSON(http.StatusOK, resp)
+		return c.JSON(http.StatusOK, docToMeeting(doc))
 	}
 }

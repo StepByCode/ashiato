@@ -1,16 +1,16 @@
 package simpleapi
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+
+	"github.com/dokkiitech/ashiato/api/internal/firebase"
 )
 
 type TaskResponse struct {
@@ -36,66 +36,69 @@ var validStates = map[string]bool{
 	"approved":    true,
 }
 
-func RegisterTaskRoutes(g *echo.Group, pool *pgxpool.Pool) {
-	g.GET("/tasks", getTasksHandler(pool))
-	g.POST("/tasks", createTaskHandler(pool))
-	g.PATCH("/tasks/:taskId/owner", patchTaskOwnerHandler(pool))
-	g.PATCH("/tasks/:taskId/url", patchTaskURLHandler(pool))
-	g.PATCH("/tasks/:taskId/state", patchTaskStateHandler(pool))
+const tasksCollection = "simple_tasks"
+
+func RegisterTaskRoutes(g *echo.Group, fs *firebase.Firestore) {
+	g.GET("/tasks", getTasksHandler(fs))
+	g.POST("/tasks", createTaskHandler(fs))
+	g.PATCH("/tasks/:taskId/owner", patchTaskOwnerHandler(fs))
+	g.PATCH("/tasks/:taskId/url", patchTaskURLHandler(fs))
+	g.PATCH("/tasks/:taskId/state", patchTaskStateHandler(fs))
 }
 
-func scanTask(row pgx.Row) (*TaskResponse, error) {
-	var t TaskResponse
-	var createdAt, updatedAt time.Time
-	err := row.Scan(&t.ID, &t.Title, &t.Owner, &t.State, &t.URL, &createdAt, &updatedAt)
-	if err != nil {
-		return nil, err
+func docToTask(doc *firebase.Document) TaskResponse {
+	f := doc.Fields
+	return TaskResponse{
+		ID:        firebase.GetStringField(f, "id"),
+		Title:     firebase.GetStringField(f, "title"),
+		Owner:     firebase.GetStringField(f, "owner"),
+		State:     firebase.GetStringField(f, "state"),
+		URL:       firebase.GetStringField(f, "url"),
+		CreatedAt: firebase.GetStringField(f, "createdAt"),
+		UpdatedAt: firebase.GetStringField(f, "updatedAt"),
 	}
-	t.CreatedAt = createdAt.Format(time.RFC3339)
-	t.UpdatedAt = updatedAt.Format(time.RFC3339)
-	return &t, nil
 }
 
-func getTasksHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func taskFields(id, title, owner, state, url string, createdAt, updatedAt time.Time) map[string]interface{} {
+	return map[string]interface{}{
+		"id":        firebase.StringVal(id),
+		"title":     firebase.StringVal(title),
+		"owner":     firebase.StringVal(owner),
+		"state":     firebase.StringVal(state),
+		"url":       firebase.StringVal(url),
+		"createdAt": firebase.StringVal(createdAt.Format(time.RFC3339)),
+		"updatedAt": firebase.StringVal(updatedAt.Format(time.RFC3339)),
+	}
+}
+
+func getTasksHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
 		month := c.QueryParam("month")
 
-		var rows pgx.Rows
-		var err error
-		if month != "" {
-			// month format: "2026-02" → extract year and month
-			var y, m int
-			if _, parseErr := fmt.Sscanf(month, "%d-%d", &y, &m); parseErr != nil {
-				return validationError(c, "month", "must be YYYY-MM format")
-			}
-			start := time.Date(y, time.Month(m), 1, 0, 0, 0, 0, time.UTC)
-			end := start.AddDate(0, 1, 0)
-			rows, err = pool.Query(ctx,
-				`SELECT id, title, owner, state, url, created_at, updated_at
-				 FROM simple_tasks
-				 WHERE created_at >= $1 AND created_at < $2
-				 ORDER BY created_at DESC`, start, end)
-		} else {
-			rows, err = pool.Query(ctx,
-				`SELECT id, title, owner, state, url, created_at, updated_at
-				 FROM simple_tasks
-				 ORDER BY created_at DESC`)
-		}
+		docs, err := fs.List(ctx, tasksCollection)
 		if err != nil {
 			return internalError(c)
 		}
-		defer rows.Close()
 
-		tasks := make([]TaskResponse, 0)
-		for rows.Next() {
-			var t TaskResponse
-			var createdAt, updatedAt time.Time
-			if err := rows.Scan(&t.ID, &t.Title, &t.Owner, &t.State, &t.URL, &createdAt, &updatedAt); err != nil {
-				return internalError(c)
+		tasks := make([]TaskResponse, 0, len(docs))
+		for i := range docs {
+			t := docToTask(&docs[i])
+
+			// Filter by month if specified
+			if month != "" {
+				var y, m int
+				if _, parseErr := fmt.Sscanf(month, "%d-%d", &y, &m); parseErr != nil {
+					return validationError(c, "month", "must be YYYY-MM format")
+				}
+				createdAt, err := time.Parse(time.RFC3339, t.CreatedAt)
+				if err != nil {
+					continue
+				}
+				if createdAt.Year() != y || int(createdAt.Month()) != m {
+					continue
+				}
 			}
-			t.CreatedAt = createdAt.Format(time.RFC3339)
-			t.UpdatedAt = updatedAt.Format(time.RFC3339)
 			tasks = append(tasks, t)
 		}
 
@@ -103,7 +106,7 @@ func getTasksHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 	}
 }
 
-func createTaskHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func createTaskHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	type request struct {
 		Title string `json:"title"`
 		Owner string `json:"owner"`
@@ -125,23 +128,28 @@ func createTaskHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 
 		id := "task-" + uuid.New().String()[:8]
 		now := time.Now()
+		fields := taskFields(id, title, req.Owner, "in_progress", "", now, now)
 
-		row := pool.QueryRow(c.Request().Context(),
-			`INSERT INTO simple_tasks (id, title, owner, state, url, created_at, updated_at)
-			 VALUES ($1, $2, $3, 'in_progress', '', $4, $4)
-			 RETURNING id, title, owner, state, url, created_at, updated_at`,
-			id, title, req.Owner, now)
-
-		task, err := scanTask(row)
+		_, err := fs.Set(c.Request().Context(), tasksCollection, id, fields)
 		if err != nil {
 			return internalError(c)
+		}
+
+		task := TaskResponse{
+			ID:        id,
+			Title:     title,
+			Owner:     req.Owner,
+			State:     "in_progress",
+			URL:       "",
+			CreatedAt: now.Format(time.RFC3339),
+			UpdatedAt: now.Format(time.RFC3339),
 		}
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{"task": task})
 	}
 }
 
-func patchTaskOwnerHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func patchTaskOwnerHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	type request struct {
 		Owner string `json:"owner"`
 	}
@@ -156,7 +164,7 @@ func patchTaskOwnerHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 			return validationError(c, "owner", "is required")
 		}
 
-		task, err := updateTaskField(c.Request().Context(), pool, taskID, "owner", req.Owner)
+		task, err := updateTaskField(c, fs, taskID, "owner", req.Owner)
 		if err != nil {
 			return err
 		}
@@ -164,7 +172,7 @@ func patchTaskOwnerHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 	}
 }
 
-func patchTaskURLHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func patchTaskURLHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	type request struct {
 		URL string `json:"url"`
 	}
@@ -179,7 +187,7 @@ func patchTaskURLHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 			return validationError(c, "url", "must be at most 2048 characters")
 		}
 
-		task, err := updateTaskField(c.Request().Context(), pool, taskID, "url", req.URL)
+		task, err := updateTaskField(c, fs, taskID, "url", req.URL)
 		if err != nil {
 			return err
 		}
@@ -187,7 +195,7 @@ func patchTaskURLHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 	}
 }
 
-func patchTaskStateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func patchTaskStateHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
 	}
@@ -202,16 +210,16 @@ func patchTaskStateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 			return validationError(c, "state", "must be in_progress, done, or approved")
 		}
 
-		// Check current state for transition rules
-		var currentState string
-		err := pool.QueryRow(c.Request().Context(),
-			`SELECT state FROM simple_tasks WHERE id = $1`, taskID).Scan(&currentState)
+		// Get current task to check state transition
+		ctx := c.Request().Context()
+		doc, err := fs.Get(ctx, tasksCollection, taskID)
 		if err != nil {
-			if err == pgx.ErrNoRows {
+			if errors.Is(err, firebase.ErrNotFound) {
 				return notFoundError(c, "task not found")
 			}
 			return internalError(c)
 		}
+		currentState := firebase.GetStringField(doc.Fields, "state")
 
 		if currentState == "approved" {
 			return conflictError(c, "cannot transition from approved state")
@@ -231,7 +239,7 @@ func patchTaskStateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 			return conflictError(c, fmt.Sprintf("cannot transition from %s to %s", currentState, req.State))
 		}
 
-		task, err := updateTaskField(c.Request().Context(), pool, taskID, "state", req.State)
+		task, err := updateTaskField(c, fs, taskID, "state", req.State)
 		if err != nil {
 			return err
 		}
@@ -239,32 +247,23 @@ func patchTaskStateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 	}
 }
 
-// updateTaskField updates a single column and returns the updated task.
-// Returns an echo error response on failure.
-func updateTaskField(ctx context.Context, pool *pgxpool.Pool, taskID, column, value string) (*TaskResponse, error) {
-	// Use parameterized column name via a safe allowlist
-	var query string
-	switch column {
-	case "owner":
-		query = `UPDATE simple_tasks SET owner = $1, updated_at = NOW() WHERE id = $2
-				 RETURNING id, title, owner, state, url, created_at, updated_at`
-	case "url":
-		query = `UPDATE simple_tasks SET url = $1, updated_at = NOW() WHERE id = $2
-				 RETURNING id, title, owner, state, url, created_at, updated_at`
-	case "state":
-		query = `UPDATE simple_tasks SET state = $1, updated_at = NOW() WHERE id = $2
-				 RETURNING id, title, owner, state, url, created_at, updated_at`
-	default:
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "invalid column")
+func updateTaskField(c echo.Context, fs *firebase.Firestore, taskID, field, value string) (*TaskResponse, error) {
+	ctx := c.Request().Context()
+
+	now := time.Now()
+	fields := map[string]interface{}{
+		field:       firebase.StringVal(value),
+		"updatedAt": firebase.StringVal(now.Format(time.RFC3339)),
 	}
 
-	row := pool.QueryRow(ctx, query, value, taskID)
-	task, err := scanTask(row)
+	doc, err := fs.Patch(ctx, tasksCollection, taskID, fields, []string{field, "updatedAt"})
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, echo.NewHTTPError(http.StatusNotFound, "task not found")
+		if errors.Is(err, firebase.ErrNotFound) {
+			return nil, notFoundError(c, "task not found")
 		}
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+		return nil, internalError(c)
 	}
-	return task, nil
+
+	task := docToTask(doc)
+	return &task, nil
 }

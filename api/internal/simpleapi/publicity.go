@@ -1,13 +1,14 @@
 package simpleapi
 
 import (
+	"errors"
 	"net/http"
 	"time"
 	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+
+	"github.com/dokkiitech/ashiato/api/internal/firebase"
 )
 
 type TemplateResponse struct {
@@ -23,33 +24,37 @@ type ChannelResponse struct {
 	UpdatedAt string `json:"updatedAt"`
 }
 
-func RegisterPublicityRoutes(g *echo.Group, pool *pgxpool.Pool) {
-	g.GET("/publicity/template", getTemplateHandler(pool))
-	g.PATCH("/publicity/template", patchTemplateHandler(pool))
-	g.GET("/publicity/channels", getChannelsHandler(pool))
-	g.PATCH("/publicity/channels/:channelId/state", patchChannelStateHandler(pool))
+const (
+	templateCollection = "publicity_template"
+	templateDocID      = "default"
+	channelsCollection = "publicity_channels"
+)
+
+func RegisterPublicityRoutes(g *echo.Group, fs *firebase.Firestore) {
+	g.GET("/publicity/template", getTemplateHandler(fs))
+	g.PATCH("/publicity/template", patchTemplateHandler(fs))
+	g.GET("/publicity/channels", getChannelsHandler(fs))
+	g.PATCH("/publicity/channels/:channelId/state", patchChannelStateHandler(fs))
 }
 
-func getTemplateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func getTemplateHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		var text string
-		var updatedAt time.Time
+		ctx := c.Request().Context()
 
-		err := pool.QueryRow(c.Request().Context(),
-			`SELECT text, updated_at FROM publicity_template WHERE id = 1`).
-			Scan(&text, &updatedAt)
+		doc, err := fs.Get(ctx, templateCollection, templateDocID)
 		if err != nil {
-			return internalError(c)
+			now := time.Now().Format(time.RFC3339)
+			return c.JSON(http.StatusOK, TemplateResponse{Text: "", UpdatedAt: now})
 		}
 
 		return c.JSON(http.StatusOK, TemplateResponse{
-			Text:      text,
-			UpdatedAt: updatedAt.Format(time.RFC3339),
+			Text:      firebase.GetStringField(doc.Fields, "text"),
+			UpdatedAt: firebase.GetStringField(doc.Fields, "updatedAt"),
 		})
 	}
 }
 
-func patchTemplateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func patchTemplateHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	type request struct {
 		Text string `json:"text"`
 	}
@@ -64,49 +69,69 @@ func patchTemplateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 			return validationError(c, "text", "must be at most 140 characters")
 		}
 
-		var text string
-		var updatedAt time.Time
+		ctx := c.Request().Context()
+		now := time.Now().Format(time.RFC3339)
+		fields := map[string]interface{}{
+			"text":      firebase.StringVal(req.Text),
+			"updatedAt": firebase.StringVal(now),
+		}
 
-		err := pool.QueryRow(c.Request().Context(),
-			`UPDATE publicity_template SET text = $1, updated_at = NOW() WHERE id = 1
-			 RETURNING text, updated_at`, req.Text).
-			Scan(&text, &updatedAt)
+		// Upsert pattern
+		_, getErr := fs.Get(ctx, templateCollection, templateDocID)
+		if getErr != nil {
+			doc, err := fs.Set(ctx, templateCollection, templateDocID, fields)
+			if err != nil {
+				return internalError(c)
+			}
+			return c.JSON(http.StatusOK, TemplateResponse{
+				Text:      firebase.GetStringField(doc.Fields, "text"),
+				UpdatedAt: firebase.GetStringField(doc.Fields, "updatedAt"),
+			})
+		}
+
+		doc, err := fs.Patch(ctx, templateCollection, templateDocID, fields, []string{"text", "updatedAt"})
 		if err != nil {
 			return internalError(c)
 		}
 
 		return c.JSON(http.StatusOK, TemplateResponse{
-			Text:      text,
-			UpdatedAt: updatedAt.Format(time.RFC3339),
+			Text:      firebase.GetStringField(doc.Fields, "text"),
+			UpdatedAt: firebase.GetStringField(doc.Fields, "updatedAt"),
 		})
 	}
 }
 
-func getChannelsHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func getChannelsHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		rows, err := pool.Query(c.Request().Context(),
-			`SELECT id, name, note, state, updated_at FROM publicity_channels ORDER BY id`)
-		if err != nil {
-			return internalError(c)
-		}
-		defer rows.Close()
+		ctx := c.Request().Context()
 
-		channels := make([]ChannelResponse, 0)
-		for rows.Next() {
-			var ch ChannelResponse
-			var updatedAt time.Time
-			if err := rows.Scan(&ch.ID, &ch.Name, &ch.Note, &ch.State, &updatedAt); err != nil {
-				return internalError(c)
-			}
-			ch.UpdatedAt = updatedAt.Format(time.RFC3339)
-			channels = append(channels, ch)
+		docs, err := fs.List(ctx, channelsCollection)
+		if err != nil {
+			// Return default channels if collection doesn't exist yet
+			return c.JSON(http.StatusOK, map[string]interface{}{"channels": defaultChannels()})
+		}
+
+		if len(docs) == 0 {
+			return c.JSON(http.StatusOK, map[string]interface{}{"channels": defaultChannels()})
+		}
+
+		channels := make([]ChannelResponse, 0, len(docs))
+		for i := range docs {
+			f := docs[i].Fields
+			channels = append(channels, ChannelResponse{
+				ID:        firebase.GetStringField(f, "id"),
+				Name:      firebase.GetStringField(f, "name"),
+				Note:      firebase.GetStringField(f, "note"),
+				State:     firebase.GetStringField(f, "state"),
+				UpdatedAt: firebase.GetStringField(f, "updatedAt"),
+			})
 		}
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"channels": channels})
 	}
 }
 
-func patchChannelStateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
+func patchChannelStateHandler(fs *firebase.Firestore) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
 	}
@@ -127,21 +152,45 @@ func patchChannelStateHandler(pool *pgxpool.Pool) echo.HandlerFunc {
 			return validationError(c, "state", "must be in_progress or done")
 		}
 
-		var ch ChannelResponse
-		var updatedAt time.Time
+		ctx := c.Request().Context()
+		now := time.Now().Format(time.RFC3339)
 
-		err := pool.QueryRow(c.Request().Context(),
-			`UPDATE publicity_channels SET state = $1, updated_at = NOW() WHERE id = $2
-			 RETURNING id, name, note, state, updated_at`, req.State, channelID).
-			Scan(&ch.ID, &ch.Name, &ch.Note, &ch.State, &updatedAt)
+		// Check channel exists
+		_, err := fs.Get(ctx, channelsCollection, channelID)
 		if err != nil {
-			if err == pgx.ErrNoRows {
+			if errors.Is(err, firebase.ErrNotFound) {
 				return notFoundError(c, "channel not found")
 			}
 			return internalError(c)
 		}
-		ch.UpdatedAt = updatedAt.Format(time.RFC3339)
+
+		fields := map[string]interface{}{
+			"state":     firebase.StringVal(req.State),
+			"updatedAt": firebase.StringVal(now),
+		}
+
+		doc, err := fs.Patch(ctx, channelsCollection, channelID, fields, []string{"state", "updatedAt"})
+		if err != nil {
+			return internalError(c)
+		}
+
+		ch := ChannelResponse{
+			ID:        firebase.GetStringField(doc.Fields, "id"),
+			Name:      firebase.GetStringField(doc.Fields, "name"),
+			Note:      firebase.GetStringField(doc.Fields, "note"),
+			State:     firebase.GetStringField(doc.Fields, "state"),
+			UpdatedAt: firebase.GetStringField(doc.Fields, "updatedAt"),
+		}
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"channel": ch})
+	}
+}
+
+func defaultChannels() []ChannelResponse {
+	now := time.Now().Format(time.RFC3339)
+	return []ChannelResponse{
+		{ID: "x", Name: "X", Note: "", State: "in_progress", UpdatedAt: now},
+		{ID: "instagram", Name: "Instagram", Note: "", State: "in_progress", UpdatedAt: now},
+		{ID: "facebook", Name: "Facebook", Note: "", State: "in_progress", UpdatedAt: now},
 	}
 }

@@ -34,6 +34,13 @@ frontend/
 └── tests/            # E2E/統合テスト
 ```
 
+## 状態管理（Zustand）
+
+- クライアント状態は `frontend/src/store` に配置する
+- `workflow-store.ts`: 定例日時と広報テンプレート／媒体状態を保持し、`persist` でブラウザに保存
+- `task-store.ts`: 作成タスクボードのローカルデモ状態
+- store はクライアントコンポーネントから selector で参照し、UI 固有の一時状態は各コンポーネント内に持つ
+
 ## 実装方針
 
 - 画面遷移は `doc/03_screen-flow.md` を正とする

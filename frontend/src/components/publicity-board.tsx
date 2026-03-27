@@ -7,31 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { ChannelId, ChannelState, useWorkflowStore } from "@/store/workflow-store";
 
 import { WorkflowShell } from "./workflow-shell";
-
-type ChannelState = "in_progress" | "done";
-type ChannelId = "x" | "instagram" | "facebook";
-
-type ChannelCard = {
-  id: ChannelId;
-  name: string;
-  note: string;
-  state: ChannelState;
-};
 
 const MAX_PUBLICITY_LENGTH = 140;
 const channelStateLabels: Record<ChannelState, string> = {
   in_progress: "in progress",
   done: "Done",
 };
-const initialTemplate =
-  "【イベント告知】4/10(金) 20:00から定例を開催します。参加URLはプロフィールから確認できます。初参加の方も歓迎です。";
-const initialChannels: ChannelCard[] = [
-  { id: "x", name: "X", note: "投稿文の最終チェック", state: "in_progress" },
-  { id: "instagram", name: "Instagram", note: "画像差し替えとキャプション確認", state: "in_progress" },
-  { id: "facebook", name: "Facebook", note: "イベントページ反映確認", state: "done" },
-];
 
 const channelStateMeta: Record<
   ChannelState,
@@ -57,8 +41,7 @@ const channelStateMeta: Record<
 };
 
 export function PublicityBoard() {
-  const [template, setTemplate] = useState(initialTemplate);
-  const [channels, setChannels] = useState(initialChannels);
+  const { template, channels, setTemplate, updateChannelState } = useWorkflowStore();
   const [pendingAction, setPendingAction] = useState<{
     channelId: ChannelId;
     targetState: ChannelState;
@@ -67,17 +50,8 @@ export function PublicityBoard() {
   const templateLength = template.length;
   const isWorkflowComplete = channels.every((channel) => channel.state === "done");
 
-  const updateChannelState = (id: ChannelId, state: ChannelState) => {
-    setChannels((currentChannels) =>
-      currentChannels.map((channel) =>
-        channel.id === id
-          ? {
-              ...channel,
-              state,
-            }
-          : channel
-      )
-    );
+  const handleUpdateChannelState = (id: ChannelId, state: ChannelState) => {
+    updateChannelState(id, state);
     setPendingAction(null);
   };
 
@@ -176,7 +150,7 @@ export function PublicityBoard() {
                         <Button
                           type="button"
                           className="h-10 rounded-full px-4 text-sm font-semibold"
-                          onClick={() => updateChannelState(channel.id, targetState)}
+                          onClick={() => handleUpdateChannelState(channel.id, targetState)}
                         >
                           はい
                         </Button>

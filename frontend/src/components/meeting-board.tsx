@@ -9,16 +9,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { getDefaultMeetingDateTime, useWorkflowStore } from "@/store/workflow-store";
 
 import { WorkflowShell } from "./workflow-shell";
-
-function getDefaultMeetingDateTime() {
-  const nextMeeting = new Date();
-  nextMeeting.setDate(nextMeeting.getDate() + 12);
-  nextMeeting.setHours(20, 0, 0, 0);
-
-  return toLocalDateTimeValue(nextMeeting);
-}
 
 function toLocalDateTimeValue(date: Date) {
   const offset = date.getTimezoneOffset() * 60_000;
@@ -58,13 +51,19 @@ const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const minuteOptions = [0, 15, 30, 45];
 
 export function MeetingBoard() {
-  const [meetingAt, setMeetingAt] = useState(getDefaultMeetingDateTime);
-  const [meetUrl, setMeetUrl] = useState("https://meet.google.com/abc-defg-hij");
+  const { meetingAt, meetUrl, setMeetingAt, setMeetUrl } = useWorkflowStore();
   const [now, setNow] = useState(Date.now());
   const [calendarMonth, setCalendarMonth] = useState(() => {
-    const defaultDate = parseMeetingDateTime(getDefaultMeetingDateTime());
+    const defaultDate = parseMeetingDateTime(meetingAt);
     return defaultDate ? new Date(defaultDate.getFullYear(), defaultDate.getMonth(), 1) : new Date();
   });
+
+  useEffect(() => {
+    const parsed = parseMeetingDateTime(meetingAt);
+    if (parsed) {
+      setCalendarMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+    }
+  }, [meetingAt]);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {

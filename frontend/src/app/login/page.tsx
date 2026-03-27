@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { getFirebaseAuth } from "@/lib/firebase";
+import { getFirebaseAuth, getMissingFirebaseConfigKeys } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import "./login.css";
@@ -16,11 +16,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  if (loading) return null;
-  if (user) {
-    router.replace("/");
-    return null;
-  }
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/");
+    }
+  }, [loading, router, user]);
+
+  if (loading || user) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,15 +31,18 @@ export default function LoginPage() {
     try {
       const auth = getFirebaseAuth();
       if (!auth) {
-        setError("Firebase が設定されていません");
+        setError(
+          `Firebase が設定されていません: ${getMissingFirebaseConfigKeys().join(", ")}`
+        );
         return;
       }
       const credential = await signInWithEmailAndPassword(auth, email, password);
+      const token = await credential.user.getIdToken();
 
       // Check if profile exists, redirect to setup if not
       try {
         const uid = credential.user.uid;
-        const res = await apiFetch(`/api/v1/profile/${uid}`, null);
+        const res = await apiFetch(`/api/v1/profile/${uid}`, token);
         if (res.ok) {
           const profile = await res.json();
           if (!profile.name) {
@@ -63,7 +68,7 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1 className="login-title">Ashiato</h1>
+        <h1 className="login-title">Backstage</h1>
         <p className="login-subtitle">ログイン</p>
         <form className="login-form" onSubmit={handleSubmit}>
           <label className="login-label" htmlFor="email">

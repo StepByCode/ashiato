@@ -8,23 +8,43 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { usePeriod } from "@/lib/period-context";
 
 import { WorkflowShell } from "./workflow-shell";
 
-type Owner = "kido" | "kitahara" | "sogo" | "nakai";
 type TaskState = "in_progress" | "done" | "approved";
 type PublicityState = "in_progress" | "done";
 
 type Task = {
   id: string;
   title: string;
-  owner: Owner;
+  assigneeId: string;
+  assigneeName: string;
   state: TaskState;
   url: string;
 };
 
-const owners: Owner[] = ["kido", "kitahara", "sogo", "nakai"];
+type Member = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+type MeResponse = {
+  user?: {
+    id?: string;
+  };
+};
+
+const fixedTasks = [
+  { title: "イベント名", assigneeRequired: false },
+  { title: "connpass URL", assigneeRequired: true },
+  { title: "Place", assigneeRequired: true },
+] as const;
+
+const fixedTaskOrder = new Map<string, number>(fixedTasks.map((task, index) => [task.title, index]));
+
 const taskStateLabels: Record<TaskState, string> = {
   in_progress: "in progress",
   done: "Done",
@@ -48,43 +68,114 @@ const stateMeta: Record<
   },
 };
 
+function sortTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((left, right) => {
+    const leftIndex = fixedTaskOrder.get(left.title);
+    const rightIndex = fixedTaskOrder.get(right.title);
+    const leftFixed = leftIndex !== undefined;
+    const rightFixed = rightIndex !== undefined;
+
+    if (leftFixed && rightFixed) return leftIndex - rightIndex;
+    if (leftFixed) return -1;
+    if (rightFixed) return 1;
+
+    return left.title.localeCompare(right.title, "ja");
+  });
+}
+
+function tasksEqual(left: Task[], right: Task[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((task, index) => {
+    const other = right[index];
+    return (
+      task.id === other.id &&
+      task.title === other.title &&
+      task.assigneeId === other.assigneeId &&
+      task.assigneeName === other.assigneeName &&
+      task.state === other.state &&
+      task.url === other.url
+    );
+  });
+}
+
 export function TaskBoard() {
+  const { getIdToken } = useAuth();
   const { selectedPeriod } = usePeriod();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [currentMemberId, setCurrentMemberId] = useState("");
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
-  const [publicityDone, setPublicityDone] = useState(false);
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
-  const [newOwner, setNewOwner] = useState<Owner | "">("");
+  const [newAssigneeId, setNewAssigneeId] = useState("");
   const [pendingAction, setPendingAction] = useState<{
     taskId: string;
     type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
   const urlTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchTasks = useCallback(async (year: number, month: number) => {
-    setLoadingTasks(true);
+  const fetchTasks = useCallback(async (year: number, month: number, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent && !hasLoadedTasks) {
+      setLoadingTasks(true);
+    }
     try {
       const res = await apiFetch(`/api/v1/tasks?year=${year}&month=${month}`, null);
       if (res.ok) {
         const data = await res.json();
-        const fetched = (data.tasks ?? []).map((t: Record<string, string>) => ({
+        const fetched = sortTasks((data.tasks ?? []).map((t: Record<string, string>) => ({
           id: t.id,
           title: t.title,
-          owner: t.owner as Owner,
+          assigneeId: t.assigneeId ?? "",
+          assigneeName: t.assigneeName ?? "",
           state: t.state as TaskState,
           url: t.url ?? "",
-        }));
-        setTasks(fetched);
+        })));
+        setTasks((prev) => (tasksEqual(prev, fetched) ? prev : fetched));
+        setHasLoadedTasks(true);
       }
     } catch {
       // API unreachable - show empty state
     } finally {
-      setLoadingTasks(false);
-      setHasLoadedTasks(true);
+      if (!silent && !hasLoadedTasks) {
+        setLoadingTasks(false);
+      }
     }
-  }, []);
+  }, [hasLoadedTasks]);
+
+  const fetchMembers = useCallback(async () => {
+    try {
+      const token = await getIdToken();
+      if (!token) return;
+      const res = await apiFetch("/api/v1/members", token);
+      if (!res.ok) return;
+      const data = await res.json();
+      setMembers(
+        (data.members ?? []).map((member: Record<string, string>) => ({
+          id: member.id,
+          name: member.name || "表示名未設定",
+          email: member.email,
+        }))
+      );
+    } catch {
+      // ignore
+    }
+  }, [getIdToken]);
+
+  const fetchMe = useCallback(async () => {
+    try {
+      const token = await getIdToken();
+      if (!token) return;
+      const res = await apiFetch("/api/v1/me", token);
+      if (!res.ok) return;
+      const data = (await res.json()) as MeResponse;
+      setCurrentMemberId(data.user?.id ?? "");
+    } catch {
+      // ignore
+    }
+  }, [getIdToken]);
 
   const fetchPublicityStatus = useCallback(async (year: number, month: number) => {
     setPublicityDone(false);
@@ -107,22 +198,45 @@ export function TaskBoard() {
     setHasLoadedTasks(false);
     setLoadingTasks(true);
     void fetchTasks(selectedPeriod.year, selectedPeriod.month);
-    void fetchPublicityStatus(selectedPeriod.year, selectedPeriod.month);
-  }, [fetchPublicityStatus, fetchTasks, selectedPeriod.year, selectedPeriod.month]);
+  }, [fetchTasks, selectedPeriod.year, selectedPeriod.month]);
 
-  const isCreationDone = tasks.length > 0 && tasks.every((task) => task.state !== "in_progress");
-  const isWorkflowComplete = hasLoadedTasks && isCreationDone && publicityDone;
+  useEffect(() => {
+    void fetchMembers();
+    void fetchMe();
+  }, [fetchMe, fetchMembers]);
+
+  useEffect(() => {
+    pollTimer.current = setInterval(() => {
+      void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
+    }, 5000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
+        void fetchMembers();
+        void fetchMe();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibility);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      if (pollTimer.current) clearInterval(pollTimer.current);
+      window.removeEventListener("focus", handleVisibility);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [fetchMe, fetchMembers, fetchTasks, selectedPeriod.month, selectedPeriod.year]);
 
   const handleCreateTask = async (event: FormEvent) => {
     event.preventDefault();
-    if (!newTitle.trim() || !newOwner) return;
+    if (!newTitle.trim() || !newAssigneeId) return;
 
     try {
       const res = await apiFetch("/api/v1/tasks", null, {
         method: "POST",
         body: JSON.stringify({
           title: newTitle.trim(),
-          owner: newOwner,
+          assigneeId: newAssigneeId,
           year: selectedPeriod.year,
           month: selectedPeriod.month,
         }),
@@ -130,26 +244,56 @@ export function TaskBoard() {
       if (res.ok) {
         const data = await res.json();
         const t = data.task;
-        setTasks((prev) => [
+        setTasks((prev) => sortTasks([
           ...prev,
-          { id: t.id, title: t.title, owner: t.owner as Owner, state: t.state as TaskState, url: t.url ?? "" },
-        ]);
+          {
+            id: t.id,
+            title: t.title,
+            assigneeId: t.assigneeId ?? "",
+            assigneeName: t.assigneeName ?? "",
+            state: t.state as TaskState,
+            url: t.url ?? "",
+          },
+        ]));
         setNewTitle("");
-        setNewOwner("");
+        setNewAssigneeId("");
         setCreateOpen(false);
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
       }
     } catch {
       // ignore network errors
     }
   };
 
-  const updateOwner = async (id: string, owner: Owner) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, owner } : task)));
+  const updateAssignee = async (id: string, assigneeId: string) => {
+    const member = members.find((entry) => entry.id === assigneeId);
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === id
+          ? { ...task, assigneeId, assigneeName: assigneeId ? (member?.name ?? "表示名未設定") : "" }
+          : task
+      )
+    );
     try {
-      await apiFetch(`/api/v1/tasks/${id}/owner`, null, {
+      const res = await apiFetch(`/api/v1/tasks/${id}/assignee`, null, {
         method: "PATCH",
-        body: JSON.stringify({ owner }),
+        body: JSON.stringify({ assigneeId }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.task;
+        setTasks((prev) =>
+          prev.map((task) =>
+            task.id === id
+              ? {
+                  ...task,
+                  assigneeId: t.assigneeId ?? "",
+                  assigneeName: t.assigneeName ?? "",
+                }
+              : task
+          )
+        );
+      }
     } catch {
       // ignore network errors
     }
@@ -159,10 +303,15 @@ export function TaskBoard() {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url } : task)));
     if (urlTimers.current[id]) clearTimeout(urlTimers.current[id]);
     urlTimers.current[id] = setTimeout(async () => {
-      await apiFetch(`/api/v1/tasks/${id}/url`, null, {
+      const res = await apiFetch(`/api/v1/tasks/${id}/url`, null, {
         method: "PATCH",
         body: JSON.stringify({ url }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.task;
+        setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url: t.url ?? "" } : task)));
+      }
     }, 600);
   };
 
@@ -178,6 +327,7 @@ export function TaskBoard() {
         setTasks((prev) =>
           prev.map((task) => (task.id === id ? { ...task, state: t.state as TaskState } : task))
         );
+        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
       }
     } catch {
       // ignore network errors
@@ -212,7 +362,12 @@ export function TaskBoard() {
     <WorkflowShell activeStep="作成" isWorkflowComplete={isWorkflowComplete}>
       <section className="grid gap-4">
         {tasks.map((task) => {
-          const showApprove = task.owner !== "nakai" && (task.state === "done" || task.state === "approved");
+          const isEventNameTask = task.title === "イベント名";
+          const hasAssignee = Boolean(task.assigneeId);
+          const isAssigneeSelf = Boolean(currentMemberId) && currentMemberId === task.assigneeId;
+          const showApprove =
+            !isEventNameTask && hasAssignee && !isAssigneeSelf && (task.state === "done" || task.state === "approved");
+          const showDoneAction = !isEventNameTask && hasAssignee && !showApprove;
           const isApproved = task.state === "approved";
           const isDoneLike = task.state !== "in_progress";
           const isApproveConfirmOpen =
@@ -227,6 +382,9 @@ export function TaskBoard() {
               ? "Approveしますか？"
               : `${taskStateLabels[pendingAction?.type === "mark_in_progress" ? "in_progress" : "done"]} に変更しますか？`;
 
+          const fixedTask = fixedTasks.find((entry) => entry.title === task.title);
+          const allowEmptyAssignee = !fixedTask?.assigneeRequired;
+
           return (
             <Card
               key={task.id}
@@ -239,22 +397,25 @@ export function TaskBoard() {
                       <h3 className="min-w-0 break-words text-2xl font-semibold tracking-tight sm:text-3xl">
                         {task.title}
                       </h3>
-                      <div className="relative w-full sm:max-w-60">
-                        <select
-                          id={`${task.id}-owner`}
-                          className="h-12 w-full appearance-none rounded-full border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
-                          aria-label={`${task.title}担当者`}
-                          value={task.owner}
-                          onChange={(e) => updateOwner(task.id, e.target.value as Owner)}
-                        >
-                          {owners.map((owner) => (
-                            <option key={owner} value={owner}>
-                              {owner}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                      </div>
+                      {!isEventNameTask ? (
+                        <div className="relative w-full sm:max-w-60">
+                          <select
+                            id={`${task.id}-assignee`}
+                            className="h-12 w-full appearance-none rounded-full border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
+                            aria-label={`${task.title}担当者`}
+                            value={task.assigneeId}
+                            onChange={(e) => updateAssignee(task.id, e.target.value)}
+                          >
+                            {allowEmptyAssignee ? <option value="">担当者なし</option> : <option value="">担当者</option>}
+                            {members.map((member) => (
+                              <option key={member.id} value={member.id}>
+                                {member.name}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -300,7 +461,7 @@ export function TaskBoard() {
                           </div>
                         ) : null}
                       </>
-                    ) : task.owner === "nakai" ? (
+                    ) : showDoneAction ? (
                       <>
                         <Button
                           type="button"
@@ -347,12 +508,19 @@ export function TaskBoard() {
                         ) : null}
                       </>
                     ) : (
-                      <div className="flex min-h-12 w-full items-center justify-center rounded-full border border-border/70 px-5 text-sm font-semibold">
-                        in progress
+                      <div className="flex min-h-12 w-full items-center justify-center rounded-full border border-border/70 px-5 text-sm font-semibold text-muted-foreground">
+                        {isEventNameTask ? "担当者不要" : hasAssignee ? "担当者が承認します" : "担当者を設定してください"}
                       </div>
                     )}
                   </div>
                 </div>
+
+                {fixedTask ? (
+                  <p className="text-xs text-muted-foreground">
+                    固定タスク
+                    {fixedTask.assigneeRequired ? " / 担当者必須" : " / 担当者任意"}
+                  </p>
+                ) : null}
 
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
                   <div>
@@ -390,7 +558,7 @@ export function TaskBoard() {
           );
         })}
 
-        <Card className="rounded-[1.75rem] border-border/70 bg-[var(--surface-panel)] max-[900px]:hidden">
+        <Card className="rounded-[1.75rem] border-border/70 bg-[var(--surface-panel)]">
           <CardContent className="p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-xl font-semibold tracking-tight">追加</h3>
@@ -398,7 +566,7 @@ export function TaskBoard() {
               <Button
                 type="button"
                 variant={isCreateOpen ? "secondary" : "default"}
-                className="min-h-12 rounded-full px-5 text-base font-semibold shadow-sm max-[900px]:hidden"
+                className="min-h-12 rounded-full px-5 text-base font-semibold shadow-sm"
                 aria-expanded={isCreateOpen}
                 aria-controls="create-form-box"
                 onClick={() => setCreateOpen((prev) => !prev)}
@@ -433,13 +601,13 @@ export function TaskBoard() {
                         className="h-12 w-full appearance-none rounded-2xl border border-border/70 bg-background/85 px-4 pr-10 text-base font-medium shadow-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
                         aria-label="新規作成の担当者"
                         required
-                        value={newOwner}
-                        onChange={(e) => setNewOwner(e.target.value as Owner | "")}
+                        value={newAssigneeId}
+                        onChange={(e) => setNewAssigneeId(e.target.value)}
                       >
                         <option value="">担当者</option>
-                        {owners.map((owner) => (
-                          <option key={owner} value={owner}>
-                            {owner}
+                        {members.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
                           </option>
                         ))}
                       </select>

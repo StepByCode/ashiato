@@ -87,12 +87,6 @@ func isSimpleAPIPath(reqPath string) bool {
 			}
 		}
 	}
-	if strings.HasPrefix(reqPath, "/api/v1/profile/") {
-		return true
-	}
-	if reqPath == "/api/v1/invite" || reqPath == "/api/v1/invites" {
-		return true
-	}
 	if reqPath == "/api/v1/workflow-periods" || reqPath == "/api/v1/workflow-periods/provision" {
 		return true
 	}

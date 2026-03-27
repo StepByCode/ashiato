@@ -5,8 +5,8 @@ import { PeriodProvider } from "@/lib/period-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ashiato Frontend",
-  description: "Ashiato task creation and confirmation pages",
+  title: "Backstage",
+  description: "StepByCode Backstage",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

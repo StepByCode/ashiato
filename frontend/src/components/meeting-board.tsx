@@ -63,6 +63,9 @@ export function MeetingBoard() {
   const { selectedPeriod } = usePeriod();
   const [meetingAt, setMeetingAt] = useState(getDefaultMeetingDateTime);
   const [meetUrl, setMeetUrl] = useState("");
+  const [savedMeetUrl, setSavedMeetUrl] = useState("");
+  const [savingMeetUrl, setSavingMeetUrl] = useState(false);
+  const [meetUrlError, setMeetUrlError] = useState("");
   const [loadingMeeting, setLoadingMeeting] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -93,6 +96,8 @@ export function MeetingBoard() {
     setLoadingMeeting(true);
     setMeetingAt(getDefaultMeetingDateTime());
     setMeetUrl("");
+    setSavedMeetUrl("");
+    setMeetUrlError("");
 
     (async () => {
       try {
@@ -109,6 +114,7 @@ export function MeetingBoard() {
           }
           if (data.meetUrl) {
             setMeetUrl(data.meetUrl);
+            setSavedMeetUrl(data.meetUrl);
           }
           initializedRef.current = true;
         }
@@ -196,7 +202,39 @@ export function MeetingBoard() {
     };
   }, [meetingAt, now]);
 
+  const hasUnsavedMeetUrl = meetUrl !== savedMeetUrl;
   const jumpHref = toJumpHref(meetUrl);
+
+  const handleSaveMeetUrl = useCallback(async () => {
+    setSavingMeetUrl(true);
+    setMeetUrlError("");
+    try {
+      const meetingDate = parseMeetingDateTime(meetingAt);
+      const body: Record<string, unknown> = {
+        year: selectedPeriod.year,
+        month: selectedPeriod.month,
+        meetUrl,
+      };
+      if (meetingDate) {
+        body.meetingAt = meetingDate.toISOString();
+      }
+
+      const res = await apiFetch("/api/v1/meeting", null, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        throw new Error("save failed");
+      }
+
+      setSavedMeetUrl(meetUrl);
+    } catch {
+      setMeetUrlError("Meetリンクの保存に失敗しました");
+    } finally {
+      setSavingMeetUrl(false);
+    }
+  }, [meetingAt, meetUrl, selectedPeriod.month, selectedPeriod.year]);
 
   if (loadingMeeting) {
     return (
@@ -326,11 +364,23 @@ export function MeetingBoard() {
                   placeholder="https://meet.google.com/..."
                   value={meetUrl}
                   onChange={(event) => {
-                    const nextUrl = event.target.value;
-                    setMeetUrl(nextUrl);
-                    if (initializedRef.current) saveMeeting(meetingAt, nextUrl, selectedPeriod.year, selectedPeriod.month);
+                    setMeetUrl(event.target.value);
+                    setMeetUrlError("");
                   }}
                 />
+                {hasUnsavedMeetUrl ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      className="min-h-12 rounded-2xl px-5 text-base font-semibold shadow-sm"
+                      onClick={handleSaveMeetUrl}
+                      disabled={savingMeetUrl}
+                    >
+                      {savingMeetUrl ? "保存中..." : "保存する"}
+                    </Button>
+                    <p className="text-sm text-muted-foreground">Meetリンクは明示的に保存します</p>
+                  </div>
+                ) : null}
+                {meetUrlError ? <p className="text-sm text-red-600">{meetUrlError}</p> : null}
                 {jumpHref ? (
                   <a
                     className={cn(

@@ -15,35 +15,35 @@
 | ID | 画面名 | 役割 | 認証 | 優先度 |
 | --- | --- | --- | --- | --- |
 | S-01 | ログイン | 認証 | 必須 | P0 |
-| S-02 | Latest定例 | 中核画面（定例） | 必須 | P1 |
-| S-03 | Latest作成 | 中核画面（作成） | 必須 | P0 |
-| S-04 | Latest広報 | 中核画面（広報） | 必須 | P1 |
-| S-05 | Past定例 | 確認画面（定例） | 必須 | P2 |
-| S-06 | Past作成 | 確認画面（作成） | 必須 | P2 |
-| S-07 | Past広報 | 確認画面（広報） | 必須 | P2 |
+| S-02 | 初回プロフィール登録 | 初回ログイン後のプロフィール設定 | 必須 | P0 |
+| S-03 | 設定 | 自分のプロフィール確認・招待導線 | 必須 | P1 |
+| S-04 | メンバー招待 | 既存メンバーによるアカウント発行 | 必須 | P1 |
+| S-05 | Latest定例 | 中核画面（定例） | 必須 | P1 |
+| S-06 | Latest作成 | 中核画面（作成） | 必須 | P0 |
+| S-07 | Latest広報 | 中核画面（広報） | 必須 | P1 |
 
 ## 2. 全体遷移図（高レベル）
 
 ```mermaid
 flowchart TD
     S01["S-01: ログイン"]
+    S02["S-02: 初回プロフィール登録"]
+    S03["S-03: 設定"]
+    S04["S-04: メンバー招待"]
 
     subgraph Core["中核画面 - Latest"]
-        S02["S-02: Latest定例"]
-        S03["S-03: Latest作成"]
-        S04["S-04: Latest広報"]
+        S05["S-05: Latest定例"]
+        S06["S-06: Latest作成"]
+        S07["S-07: Latest広報"]
     end
 
-    subgraph History["確認画面 - Past"]
-        S05["S-05: Past定例"]
-        S06["S-06: Past作成"]
-        S07["S-07: Past広報"]
-    end
-
-    S01 --> S02
-    S02 <--> S05
-    S03 <--> S06
-    S04 <--> S07
+    S01 -->|"プロフィール未登録"| S02
+    S01 -->|"プロフィール登録済み"| S05
+    S02 --> S05
+    S05 --> S03
+    S03 --> S04
+    S05 <--> S06
+    S06 <--> S07
 ```
 
 ## 3. 認証フロー
@@ -52,7 +52,9 @@ flowchart TD
 flowchart LR
     S01["S-01: ログイン"] --> AuthCheck{"Authenticated?"}
     AuthCheck -- No --> S01
-    AuthCheck -- Yes --> Latest["Latest画面"]
+    AuthCheck -- Yes --> ProfileCheck{"Profile exists?"}
+    ProfileCheck -- No --> S02["初回プロフィール登録"]
+    ProfileCheck -- Yes --> Latest["Latest画面"]
 ```
 
 ## 4. CRUD標準遷移テンプレ
@@ -120,9 +122,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    S01["S-01: ログイン"] --> HasData{"Data exists?"}
-    HasData -->|"No"| S01
-    HasData -->|"Yes"| CurrentTask["n月の今進んでいるタスク画面"]
+    S01["S-01: ログイン"] --> HasAccount{"招待済みアカウント?"}
+    HasAccount -->|"No"| S01
+    HasAccount -->|"Yes"| HasProfile{"プロフィール登録済み?"}
+    HasProfile -->|"No"| S02["初回プロフィール登録"]
+    HasProfile -->|"Yes"| CurrentTask["n月の今進んでいるタスク画面"]
 ```
 
 ## 9. モバイル考慮（任意）
@@ -136,8 +140,11 @@ flowchart TD
 ## 10. URL設計テンプレ
 
 - `/login`
-- `/dashboard`
-- `/dashboard/yyyy/mm`
-- `/create/yyyy/mm`
-- `/meeting/yyyy/mm`
-- `/influence/yyyy/mm`
+- `/profile-setup`
+- `/settings`
+- `/invite`
+- `/`
+- `/meeting`
+- `/task-create`
+- 作成画面では `イベント名` `connpassURL` `Place` を固定タスクとして保持する
+- `/publicity`

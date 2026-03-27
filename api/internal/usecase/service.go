@@ -53,6 +53,8 @@ type CreateTaskInput struct {
 	Month        int32
 }
 
+var defaultTaskTitles = []string{"イベント名", "connpass URL", "Place"}
+
 type UpdateTaskInput struct {
 	ID           uuid.UUID
 	Title        string
@@ -316,6 +318,10 @@ func (s *Service) ListTasks(ctx context.Context, actor domain.Actor, year, month
 		return nil, err
 	}
 
+	if err := s.ensureDefaultTasks(ctx, actor, year, month); err != nil {
+		return nil, err
+	}
+
 	ids, docs, err := s.store.ListTasksByPeriod(ctx, actor.OrganizationID, year, month)
 	if err != nil {
 		return nil, domain.NewAppError(domain.ErrorCodeInternal, "failed to list tasks", err)
@@ -379,6 +385,44 @@ func (s *Service) CreateTask(ctx context.Context, actor domain.Actor, input Crea
 		return domain.Task{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
 	}
 	return task, nil
+}
+
+func (s *Service) ensureDefaultTasks(ctx context.Context, actor domain.Actor, year, month int32) error {
+	ids, docs, err := s.store.ListTasksByPeriod(ctx, actor.OrganizationID, year, month)
+	if err != nil {
+		return domain.NewAppError(domain.ErrorCodeInternal, "failed to inspect existing tasks", err)
+	}
+	_ = ids
+
+	existingTitles := make(map[string]struct{}, len(docs))
+	for _, doc := range docs {
+		existingTitles[strings.TrimSpace(doc.Title)] = struct{}{}
+	}
+
+	for _, title := range defaultTaskTitles {
+		if _, ok := existingTitles[title]; ok {
+			continue
+		}
+
+		taskDoc := repository.TaskDoc{
+			OrganizationID: actor.OrganizationID.String(),
+			Year:           year,
+			Month:          month,
+			Title:          title,
+			Status:         domain.TaskStatusInProgress,
+			CreatedBy:      actor.UserID.String(),
+		}
+
+		taskID, _, createErr := s.store.CreateTask(ctx, taskDoc)
+		if createErr != nil {
+			return domain.NewAppError(domain.ErrorCodeInternal, "failed to create default task", createErr)
+		}
+		if replaceErr := s.store.ReplaceTaskApprovals(ctx, taskID, nil, nil); replaceErr != nil {
+			return domain.NewAppError(domain.ErrorCodeInternal, "failed to initialize default task approvals", replaceErr)
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) UpdateTask(ctx context.Context, actor domain.Actor, input UpdateTaskInput) (domain.Task, error) {

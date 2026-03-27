@@ -3,13 +3,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { isFirebaseConfigured } from "@/lib/firebase";
 import { apiFetch } from "@/lib/api";
 
 const positions = ["代表", "副代表", "エンジニア", "デザイナー", "広報", "その他"] as const;
 
 export default function SettingsPage() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, getIdToken } = useAuth();
   const router = useRouter();
   const [name, setName] = useState("");
   const [position, setPosition] = useState("");
@@ -22,7 +21,9 @@ export default function SettingsPage() {
 
   const fetchProfile = useCallback(async () => {
     try {
-      const res = await apiFetch(`/api/v1/profile/${uid}`, null);
+      const token = await getIdToken();
+      if (!token) return;
+      const res = await apiFetch(`/api/v1/profile/${uid}`, token);
       if (res.ok) {
         const data = await res.json();
         setName(data.name ?? "");
@@ -36,14 +37,16 @@ export default function SettingsPage() {
   }, [uid]);
 
   useEffect(() => {
-    if (!loading) fetchProfile();
-  }, [loading, fetchProfile]);
+    if (!loading && !user) {
+      router.replace("/login");
+      return;
+    }
+    if (user) {
+      void fetchProfile();
+    }
+  }, [fetchProfile, loading, router, user]);
 
-  if (loading) return null;
-  if (!user && isFirebaseConfigured) {
-    router.replace("/login");
-    return null;
-  }
+  if (loading || !user) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -53,7 +56,12 @@ export default function SettingsPage() {
     setSubmitting(true);
 
     try {
-      const res = await apiFetch(`/api/v1/profile/${uid}`, null, {
+      const token = await getIdToken();
+      if (!token) {
+        setError("ログイン状態を確認できませんでした");
+        return;
+      }
+      const res = await apiFetch(`/api/v1/profile/${uid}`, token, {
         method: "PATCH",
         body: JSON.stringify({ name: name.trim(), position }),
       });
@@ -75,7 +83,7 @@ export default function SettingsPage() {
       <div className="w-full max-w-md rounded-[var(--card-radius)] bg-white p-8 shadow-lg dark:bg-card">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--accent)]">Ashiato</h1>
+            <h1 className="text-2xl font-bold text-[var(--accent)]">Backstage</h1>
             <p className="mt-1 text-sm text-muted-foreground">プロフィール設定</p>
           </div>
           <button

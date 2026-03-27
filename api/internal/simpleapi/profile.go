@@ -7,6 +7,8 @@ import (
 
 	"firebase.google.com/go/v4/db"
 	"github.com/labstack/echo/v4"
+
+	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
 
 // ProfileResponse is the user profile stored in the database.
@@ -29,6 +31,12 @@ func RegisterProfileRoutes(g *echo.Group, client *db.Client) {
 func getProfileHandler(client *db.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		uid := c.Param("uid")
+		actor, ok := appctx.ActorFromContext(c.Request().Context())
+		if !ok || actor.Subject != uid {
+			return c.JSON(http.StatusForbidden, ErrorResponse{
+				Error: ErrorBody{Code: "FORBIDDEN", Message: "profile access is limited to the signed-in user"},
+			})
+		}
 		ref := client.NewRef(profilesCollection).Child(uid)
 		var profile ProfileResponse
 		if err := ref.Get(c.Request().Context(), &profile); err != nil || profile.UID == "" {
@@ -48,6 +56,12 @@ func patchProfileHandler(client *db.Client) echo.HandlerFunc {
 
 	return func(c echo.Context) error {
 		uid := c.Param("uid")
+		actor, ok := appctx.ActorFromContext(c.Request().Context())
+		if !ok || actor.Subject != uid {
+			return c.JSON(http.StatusForbidden, ErrorResponse{
+				Error: ErrorBody{Code: "FORBIDDEN", Message: "profile access is limited to the signed-in user"},
+			})
+		}
 		var req request
 		if err := c.Bind(&req); err != nil {
 			return validationError(c, "body", "invalid JSON")

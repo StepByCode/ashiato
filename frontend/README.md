@@ -40,6 +40,21 @@ frontend/
 - フロントの権限制御はUX補助であり、最終判定はAPI側で行う
 - まずP0画面を固め、その後P1/P2を段階追加する
 
+## ローカル起動前の設定
+
+`frontend/.env.local` を作成し、最低限次を設定する:
+
+```bash
+cp .env.example .env.local
+```
+
+- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+
+この3つの Firebase 変数が空だと、ログイン画面で `Firebase が設定されていません` になります。
+
 ## 関連ドキュメント
 
 - `../doc/01_feature-list.md`

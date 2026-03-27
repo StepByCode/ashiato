@@ -37,16 +37,16 @@ export default function MembersPage() {
   }, [getIdToken]);
 
   useEffect(() => {
-    if (!loading && user) {
-      fetchMembers();
+    if (!loading && !user) {
+      router.replace("/login");
+      return;
     }
-  }, [loading, user, fetchMembers]);
+    if (user) {
+      void fetchMembers();
+    }
+  }, [fetchMembers, loading, router, user]);
 
-  if (loading) return null;
-  if (!user) {
-    router.replace("/login");
-    return null;
-  }
+  if (loading || !user) return null;
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();

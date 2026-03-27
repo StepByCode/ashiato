@@ -24,6 +24,7 @@ import (
 	"github.com/dokkiitech/ashiato/api/internal/oapi"
 	"github.com/dokkiitech/ashiato/api/internal/repository"
 	"github.com/dokkiitech/ashiato/api/internal/simpleapi"
+	"github.com/dokkiitech/ashiato/api/internal/swagger"
 	"github.com/dokkiitech/ashiato/api/internal/usecase"
 )
 
@@ -86,6 +87,8 @@ func main() {
 	e.GET("/healthz", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
+
+	swagger.Register(e)
 
 	strictHandler := oapi.NewStrictHandler(server, nil)
 	oapi.RegisterHandlers(e, strictHandler)

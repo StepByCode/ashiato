@@ -1,27 +1,27 @@
 package simpleapi
 
 import (
-	"errors"
 	"net/http"
 	"time"
 	"unicode/utf8"
 
+	"cloud.google.com/go/firestore"
 	"github.com/labstack/echo/v4"
-
-	"github.com/dokkiitech/ashiato/api/internal/firebase"
 )
 
+// TemplateResponse matches the spec in docs/backend-api-request.md §4.3.
 type TemplateResponse struct {
-	Text      string `json:"text"`
-	UpdatedAt string `json:"updatedAt"`
+	Text      string `json:"text" firestore:"text"`
+	UpdatedAt string `json:"updatedAt" firestore:"updatedAt"`
 }
 
+// ChannelResponse matches the spec in docs/backend-api-request.md §4.4.
 type ChannelResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Note      string `json:"note"`
-	State     string `json:"state"`
-	UpdatedAt string `json:"updatedAt"`
+	ID        string `json:"id" firestore:"id"`
+	Name      string `json:"name" firestore:"name"`
+	Note      string `json:"note" firestore:"note"`
+	State     string `json:"state" firestore:"state"`
+	UpdatedAt string `json:"updatedAt" firestore:"updatedAt"`
 }
 
 const (
@@ -30,31 +30,33 @@ const (
 	channelsCollection = "publicity_channels"
 )
 
-func RegisterPublicityRoutes(g *echo.Group, fs *firebase.Firestore) {
-	g.GET("/publicity/template", getTemplateHandler(fs))
-	g.PATCH("/publicity/template", patchTemplateHandler(fs))
-	g.GET("/publicity/channels", getChannelsHandler(fs))
-	g.PATCH("/publicity/channels/:channelId/state", patchChannelStateHandler(fs))
+// RegisterPublicityRoutes registers Publicity API endpoints.
+func RegisterPublicityRoutes(g *echo.Group, client *firestore.Client) {
+	g.GET("/publicity/template", getTemplateHandler(client))
+	g.PATCH("/publicity/template", patchTemplateHandler(client))
+	g.GET("/publicity/channels", getChannelsHandler(client))
+	g.PATCH("/publicity/channels/:channelId/state", patchChannelStateHandler(client))
 }
 
-func getTemplateHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func getTemplateHandler(client *firestore.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		ctx := c.Request().Context()
-
-		doc, err := fs.Get(ctx, templateCollection, templateDocID)
+		doc, err := client.Collection(templateCollection).Doc(templateDocID).Get(c.Request().Context())
 		if err != nil {
-			now := time.Now().Format(time.RFC3339)
-			return c.JSON(http.StatusOK, TemplateResponse{Text: "", UpdatedAt: now})
+			return c.JSON(http.StatusOK, TemplateResponse{
+				Text:      "",
+				UpdatedAt: time.Now().Format(time.RFC3339),
+			})
 		}
 
-		return c.JSON(http.StatusOK, TemplateResponse{
-			Text:      firebase.GetStringField(doc.Fields, "text"),
-			UpdatedAt: firebase.GetStringField(doc.Fields, "updatedAt"),
-		})
+		var resp TemplateResponse
+		if err := doc.DataTo(&resp); err != nil {
+			return internalError(c)
+		}
+		return c.JSON(http.StatusOK, resp)
 	}
 }
 
-func patchTemplateHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func patchTemplateHandler(client *firestore.Client) echo.HandlerFunc {
 	type request struct {
 		Text string `json:"text"`
 	}
@@ -64,74 +66,45 @@ func patchTemplateHandler(fs *firebase.Firestore) echo.HandlerFunc {
 		if err := c.Bind(&req); err != nil {
 			return validationError(c, "body", "invalid JSON")
 		}
-
 		if utf8.RuneCountInString(req.Text) > 140 {
 			return validationError(c, "text", "must be at most 140 characters")
 		}
 
 		ctx := c.Request().Context()
 		now := time.Now().Format(time.RFC3339)
-		fields := map[string]interface{}{
-			"text":      firebase.StringVal(req.Text),
-			"updatedAt": firebase.StringVal(now),
-		}
+		data := TemplateResponse{Text: req.Text, UpdatedAt: now}
 
-		// Upsert pattern
-		_, getErr := fs.Get(ctx, templateCollection, templateDocID)
-		if getErr != nil {
-			doc, err := fs.Set(ctx, templateCollection, templateDocID, fields)
-			if err != nil {
-				return internalError(c)
-			}
-			return c.JSON(http.StatusOK, TemplateResponse{
-				Text:      firebase.GetStringField(doc.Fields, "text"),
-				UpdatedAt: firebase.GetStringField(doc.Fields, "updatedAt"),
-			})
-		}
-
-		doc, err := fs.Patch(ctx, templateCollection, templateDocID, fields, []string{"text", "updatedAt"})
-		if err != nil {
+		ref := client.Collection(templateCollection).Doc(templateDocID)
+		if _, err := ref.Set(ctx, data); err != nil {
 			return internalError(c)
 		}
-
-		return c.JSON(http.StatusOK, TemplateResponse{
-			Text:      firebase.GetStringField(doc.Fields, "text"),
-			UpdatedAt: firebase.GetStringField(doc.Fields, "updatedAt"),
-		})
+		return c.JSON(http.StatusOK, data)
 	}
 }
 
-func getChannelsHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func getChannelsHandler(client *firestore.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		ctx := c.Request().Context()
-
-		docs, err := fs.List(ctx, channelsCollection)
-		if err != nil {
-			// Return default channels if collection doesn't exist yet
-			return c.JSON(http.StatusOK, map[string]interface{}{"channels": defaultChannels()})
-		}
-
-		if len(docs) == 0 {
+		docs, err := client.Collection(channelsCollection).Documents(c.Request().Context()).GetAll()
+		if err != nil || len(docs) == 0 {
 			return c.JSON(http.StatusOK, map[string]interface{}{"channels": defaultChannels()})
 		}
 
 		channels := make([]ChannelResponse, 0, len(docs))
-		for i := range docs {
-			f := docs[i].Fields
-			channels = append(channels, ChannelResponse{
-				ID:        firebase.GetStringField(f, "id"),
-				Name:      firebase.GetStringField(f, "name"),
-				Note:      firebase.GetStringField(f, "note"),
-				State:     firebase.GetStringField(f, "state"),
-				UpdatedAt: firebase.GetStringField(f, "updatedAt"),
-			})
+		for _, doc := range docs {
+			var ch ChannelResponse
+			if err := doc.DataTo(&ch); err != nil {
+				continue
+			}
+			channels = append(channels, ch)
 		}
-
+		if len(channels) == 0 {
+			channels = defaultChannels()
+		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"channels": channels})
 	}
 }
 
-func patchChannelStateHandler(fs *firebase.Firestore) echo.HandlerFunc {
+func patchChannelStateHandler(client *firestore.Client) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
 	}
@@ -147,41 +120,36 @@ func patchChannelStateHandler(fs *firebase.Firestore) echo.HandlerFunc {
 		if err := c.Bind(&req); err != nil {
 			return validationError(c, "body", "invalid JSON")
 		}
-
 		if !validChannelStates[req.State] {
 			return validationError(c, "state", "must be in_progress or done")
 		}
 
 		ctx := c.Request().Context()
 		now := time.Now().Format(time.RFC3339)
+		ref := client.Collection(channelsCollection).Doc(channelID)
 
-		// Check channel exists
-		_, err := fs.Get(ctx, channelsCollection, channelID)
-		if err != nil {
-			if errors.Is(err, firebase.ErrNotFound) {
+		if _, err := ref.Get(ctx); err != nil {
+			if isNotFound(err) {
 				return notFoundError(c, "channel not found")
 			}
 			return internalError(c)
 		}
 
-		fields := map[string]interface{}{
-			"state":     firebase.StringVal(req.State),
-			"updatedAt": firebase.StringVal(now),
-		}
-
-		doc, err := fs.Patch(ctx, channelsCollection, channelID, fields, []string{"state", "updatedAt"})
-		if err != nil {
+		if _, err := ref.Update(ctx, []firestore.Update{
+			{Path: "state", Value: req.State},
+			{Path: "updatedAt", Value: now},
+		}); err != nil {
 			return internalError(c)
 		}
 
-		ch := ChannelResponse{
-			ID:        firebase.GetStringField(doc.Fields, "id"),
-			Name:      firebase.GetStringField(doc.Fields, "name"),
-			Note:      firebase.GetStringField(doc.Fields, "note"),
-			State:     firebase.GetStringField(doc.Fields, "state"),
-			UpdatedAt: firebase.GetStringField(doc.Fields, "updatedAt"),
+		doc, err := ref.Get(ctx)
+		if err != nil {
+			return internalError(c)
 		}
-
+		var ch ChannelResponse
+		if err := doc.DataTo(&ch); err != nil {
+			return internalError(c)
+		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"channel": ch})
 	}
 }

@@ -24,5 +24,8 @@ out
 *.sst
 *.met
 
+# Go binary
+api/server
+
 # Misc
 coverage/

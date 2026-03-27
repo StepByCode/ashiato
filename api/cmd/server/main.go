@@ -16,10 +16,12 @@ import (
 
 	"github.com/dokkiitech/ashiato/api/internal/auth"
 	"github.com/dokkiitech/ashiato/api/internal/config"
+	"github.com/dokkiitech/ashiato/api/internal/firebase"
 	"github.com/dokkiitech/ashiato/api/internal/handler"
 	"github.com/dokkiitech/ashiato/api/internal/logging"
 	"github.com/dokkiitech/ashiato/api/internal/oapi"
 	"github.com/dokkiitech/ashiato/api/internal/repository"
+	"github.com/dokkiitech/ashiato/api/internal/simpleapi"
 	"github.com/dokkiitech/ashiato/api/internal/usecase"
 )
 
@@ -68,6 +70,29 @@ func main() {
 
 	strictHandler := oapi.NewStrictHandler(server, nil)
 	oapi.RegisterHandlers(e, strictHandler)
+
+	// Simple API endpoints (docs/backend-api-request.md) backed by Firebase/Firestore
+	if cfg.FirebaseSAKeyPath != "" {
+		saJSON, err := os.ReadFile(cfg.FirebaseSAKeyPath)
+		if err != nil {
+			logger.Error("failed to read Firebase service account key", slog.Any("error", err))
+			os.Exit(1)
+		}
+		fbApp, err := firebase.NewApp(saJSON)
+		if err != nil {
+			logger.Error("failed to initialize Firebase", slog.Any("error", err))
+			os.Exit(1)
+		}
+		fs := firebase.NewFirestore(fbApp)
+		logger.Info("firebase initialized", slog.String("project", fbApp.ProjectID))
+
+		simpleGroup := e.Group("/api/v1")
+		simpleapi.RegisterTaskRoutes(simpleGroup, fs)
+		simpleapi.RegisterMeetingRoutes(simpleGroup, fs)
+		simpleapi.RegisterPublicityRoutes(simpleGroup, fs)
+	} else {
+		logger.Warn("FIREBASE_SA_KEY_PATH not set; simple API endpoints are disabled")
+	}
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%s", cfg.Port),

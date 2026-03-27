@@ -56,6 +56,7 @@ export function WorkflowShell({
     return isWorkflowStep(savedStep) ? savedStep : activeStep;
   });
   const [showCompleteLabel, setShowCompleteLabel] = useState(false);
+  const [showCompleteAccentBackground, setShowCompleteAccentBackground] = useState(false);
 
   const progressWidth = isWorkflowComplete ? "calc(100% - 4rem)" : progressWidths[animatedStep];
 
@@ -77,14 +78,23 @@ export function WorkflowShell({
   useEffect(() => {
     if (!isWorkflowComplete) {
       setShowCompleteLabel(false);
+      setShowCompleteAccentBackground(false);
       return;
     }
 
-    const timerId = window.setTimeout(() => {
+    const showTimerId = window.setTimeout(() => {
       setShowCompleteLabel(true);
+      setShowCompleteAccentBackground(true);
     }, 500);
 
-    return () => window.clearTimeout(timerId);
+    const hideTimerId = window.setTimeout(() => {
+      setShowCompleteLabel(false);
+    }, 1500);
+
+    return () => {
+      window.clearTimeout(showTimerId);
+      window.clearTimeout(hideTimerId);
+    };
   }, [isWorkflowComplete]);
 
   return (
@@ -195,7 +205,12 @@ export function WorkflowShell({
                 </div>
               </div>
 
-              <Card className="rounded-[1.75rem] border-border/70 bg-background/70">
+              <Card
+                className={cn(
+                  "rounded-[1.75rem] border-border/70",
+                  showCompleteAccentBackground ? "bg-[#FDE7CF] dark:bg-[#3A2E20]" : "bg-white dark:bg-background/70"
+                )}
+              >
                 <CardContent className="p-4 sm:p-5">
                   <div className="relative min-h-16">
                     <div
@@ -249,7 +264,7 @@ export function WorkflowShell({
                           : "-translate-y-6 opacity-0"
                       )}
                     >
-                      <span className="text-4xl font-black uppercase tracking-[0.2em] text-zinc-700 dark:text-primary sm:text-5xl">
+                      <span className="text-4xl font-black uppercase tracking-[0.2em] text-[#D97706] dark:text-primary sm:text-5xl">
                         complete！
                       </span>
                     </div>

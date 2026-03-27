@@ -37,22 +37,13 @@ const channelStateMeta: Record<
   ChannelState,
   {
     cardClassName: string;
-    stateContainerClassName: string;
-    stateLabelClassName: string;
-    stateValueClassName: string;
   }
 > = {
   in_progress: {
     cardClassName: "border-border/70 bg-card/95",
-    stateContainerClassName: "border-border/70 bg-background/80",
-    stateLabelClassName: "text-muted-foreground",
-    stateValueClassName: "text-foreground",
   },
   done: {
-    cardClassName: "border-emerald-300/60 bg-[var(--surface-success)]",
-    stateContainerClassName: "border-emerald-300/60 bg-emerald-100",
-    stateLabelClassName: "text-emerald-900/70",
-    stateValueClassName: "text-emerald-950",
+    cardClassName: "border-emerald-300/60 bg-[var(--surface-success)] dark:border-[#5E936C] dark:bg-[#3E5F44]",
   },
 };
 
@@ -131,8 +122,8 @@ export function PublicityBoard() {
                 key={channel.id}
                 className={cn("rounded-[1.75rem] border-2 shadow-sm transition-colors", meta.cardClassName)}
               >
-                <CardContent className="p-5 sm:p-6">
-                  <div className="mb-[10px] flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <CardContent className="p-4 sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="space-y-2">
                       <h4 className="text-2xl font-semibold tracking-tight">{channel.name}</h4>
                       <p className="text-sm text-muted-foreground">{channel.note}</p>
@@ -141,7 +132,11 @@ export function PublicityBoard() {
                     <Button
                       type="button"
                       variant={isDone ? "secondary" : "default"}
-                      className="min-h-14 w-full rounded-[1.25rem] px-6 text-base font-semibold shadow-sm sm:w-auto sm:min-w-52"
+                      className={cn(
+                        "min-h-14 w-full rounded-[1.25rem] px-6 text-base font-semibold shadow-sm sm:w-auto sm:min-w-52",
+                        !isDone &&
+                          "dark:border dark:border-[#568661] dark:bg-[#3E5F44] dark:text-foreground dark:hover:bg-[#4A7453]"
+                      )}
                       onClick={() => setPendingAction({ channelId: channel.id, targetState })}
                     >
                       {isDone ? <RotateCcw className="size-4" /> : <CheckCheck className="size-4" />}
@@ -149,20 +144,8 @@ export function PublicityBoard() {
                     </Button>
                   </div>
 
-                  <div
-                    className={cn(
-                      "flex min-h-28 flex-col justify-center rounded-[1.5rem] border px-5 py-[5px] shadow-sm",
-                      isConfirmOpen ? "mb-[10px]" : "",
-                      meta.stateContainerClassName
-                    )}
-                  >
-                    <span className={cn("text-[1.75rem] font-semibold tracking-tight sm:text-[2.25rem]", meta.stateValueClassName)}>
-                      {isDone ? "Done" : "in progress"}
-                    </span>
-                  </div>
-
                   {isConfirmOpen ? (
-                    <div className="grid w-full gap-2 rounded-[1.25rem] border border-border/70 bg-popover/95 p-3 text-sm font-medium shadow-sm">
+                    <div className="mt-3 grid w-full gap-2 rounded-[1.25rem] border border-border/70 bg-popover/95 p-3 text-sm font-medium shadow-sm">
                       <span className="whitespace-nowrap text-foreground">{pendingCopy}</span>
                       <div className="flex flex-wrap gap-2">
                         <Button

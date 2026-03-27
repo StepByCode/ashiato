@@ -35,13 +35,17 @@ Ashiato フロントエンドは **Firebase Authentication（Email/Password）**
 frontend/src/
 ├── lib/
 │   ├── firebase.ts        # Firebase 初期化（シングルトン）
-│   └── auth-context.tsx   # 認証コンテキスト（AuthProvider / useAuth）
+│   ├── auth-context.tsx   # 認証コンテキスト（AuthProvider / useAuth）
+│   └── api.ts             # API クライアントヘルパー
 ├── app/
 │   ├── layout.tsx         # AuthProvider をルートに配置
 │   ├── page.tsx           # 認証ガード付きメインページ
-│   └── login/
-│       ├── page.tsx       # ログインフォーム
-│       └── login.css      # ログインページスタイル
+│   ├── login/
+│   │   ├── page.tsx       # ログインフォーム
+│   │   └── login.css      # ログインページスタイル
+│   └── members/
+│       ├── page.tsx       # メンバー管理画面（一覧 + 作成フォーム）
+│       └── members.css    # メンバー管理スタイル
 ```
 
 ## 主要モジュール
@@ -119,16 +123,28 @@ async function fetchFromAPI(path: string) {
 
 ## ユーザー管理
 
-- ユーザーの作成・削除は **Firebase コンソール** で行います
-- Firebase コンソール → Authentication → Users から操作
-- API 側はログイン時に `users` テーブルへ自動 upsert するため、個別のユーザー登録 API は不要です
-- `OWNER_EMAILS` 環境変数に含まれるメールアドレスのユーザーは `OWNER` ロールが付与されます
+### 画面からの作成（推奨）
+
+- `/members` ページからメンバーの作成が可能
+- **OWNER ロールのユーザーのみ** がメンバーを作成できる
+- 作成フォームで `メールアドレス` `パスワード` `表示名（任意）` を入力
+- API（`POST /api/v1/members`）経由で Firebase Auth ユーザーが作成され、組織に自動所属する
+
+### Firebase コンソールからの作成
+
+- Firebase コンソール → Authentication → Users から直接ユーザーを追加することも可能
+- コンソールで作成したユーザーは初回ログイン時に API 側で自動 upsert される
+
+### ロール付与
+
+- `OWNER_EMAILS` 環境変数に含まれるメールアドレスのユーザーは `OWNER` ロールが付与される
+- それ以外のユーザーはデフォルトで `EDITOR` ロールが付与される
 
 ## トラブルシューティング
 
 | 症状 | 原因 | 対処 |
 | --- | --- | --- |
-| ログインできない | Firebase コンソールでユーザーが未作成 | Authentication → Users でユーザーを追加 |
+| ログインできない | Firebase コンソールでユーザーが未作成 | `/members` 画面または Firebase コンソールでユーザーを追加 |
 | `auth/invalid-api-key` | `NEXT_PUBLIC_FIREBASE_API_KEY` が未設定または間違い | `.env.local` を確認 |
 | API が 401 を返す | ID トークンが期限切れまたは未送信 | `getIdToken()` は自動で更新されるが、明示的に `getIdToken(true)` で強制更新も可能 |
 | ログイン後すぐログアウトされる | `AuthProvider` がマウントされていない | `layout.tsx` で `<AuthProvider>` がルートを囲んでいるか確認 |

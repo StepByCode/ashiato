@@ -30,6 +30,21 @@ export default function HomePage() {
         <span>{user.email}</span>
         <button
           type="button"
+          onClick={() => router.push("/members")}
+          style={{
+            fontSize: "0.8125rem",
+            padding: "0.25rem 0.75rem",
+            border: "1px solid var(--regular)",
+            borderRadius: "var(--button-radius)",
+            background: "transparent",
+            cursor: "pointer",
+            color: "var(--letter)",
+          }}
+        >
+          メンバー管理
+        </button>
+        <button
+          type="button"
           onClick={logout}
           style={{
             fontSize: "0.8125rem",

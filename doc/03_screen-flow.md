@@ -66,6 +66,26 @@ flowchart LR
     S04 -->|"新規作成"| S04
 ```
 
+## 4.1. 月次発行フロー（Go CLI CronJob）
+
+毎月1日にCoolify CronJobでGo CLIが実行され、2ヶ月先の月のワークフロー期間を自動プロビジョニングする。
+サーバーはUTCだが、Go CLI内部でJST変換して正しい月を判定する。
+
+例: JST 12月1日に実行 → 2月分のワークフロー期間（定例・作成・広報ページ）が生成される。
+
+```mermaid
+flowchart TD
+    Cron["Coolify CronJob（UTC 0 0 1 * *）"] -->|"go run cmd/cron"| CLI["Go CLI"]
+    CLI -->|"JST基準で現在月+2を計算"| Provision["ProvisionAllOrganizations"]
+    Provision --> Meeting["Meeting作成（planned）"]
+    Provision --> Announcement["Announcement作成（draft）"]
+    Meeting --> Sidebar["サイドバーに月が表示"]
+    Announcement --> Sidebar
+```
+
+サイドバーの月リストは `GET /api/v1/workflow-periods` から動的に取得される。
+ユーザーは月を選択して、各月の定例・作成・広報を管理できる。
+
 ## 5. 状態別分岐（State-based Flow）
 
 ```mermaid

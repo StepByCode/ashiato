@@ -1,7 +1,9 @@
 package simpleapi
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"firebase.google.com/go/v4/db"
@@ -15,10 +17,7 @@ type MeetingResponse struct {
 	UpdatedAt string  `json:"updatedAt"`
 }
 
-const (
-	meetingCollection = "meeting_settings"
-	meetingDocID      = "default"
-)
+const meetingCollection = "meeting_settings"
 
 // RegisterMeetingRoutes registers Meeting API endpoints.
 func RegisterMeetingRoutes(g *echo.Group, client *db.Client) {
@@ -26,10 +25,27 @@ func RegisterMeetingRoutes(g *echo.Group, client *db.Client) {
 	g.PATCH("/meeting", patchMeetingHandler(client))
 }
 
+func meetingDocID(year, month int) string {
+	if year == 0 || month == 0 {
+		return "default"
+	}
+	return fmt.Sprintf("%d_%02d", year, month)
+}
+
+func parsePeriodParams(c echo.Context) (int, int) {
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+	year, _ := strconv.Atoi(yearStr)
+	month, _ := strconv.Atoi(monthStr)
+	return year, month
+}
+
 func getMeetingHandler(client *db.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
-		ref := client.NewRef(meetingCollection).Child(meetingDocID)
+		year, month := parsePeriodParams(c)
+		docID := meetingDocID(year, month)
+		ref := client.NewRef(meetingCollection).Child(docID)
 		var resp MeetingResponse
 		if err := ref.Get(ctx, &resp); err != nil || resp.UpdatedAt == "" {
 			return c.JSON(http.StatusOK, MeetingResponse{
@@ -45,6 +61,8 @@ func patchMeetingHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
 		MeetingAt *string `json:"meetingAt"`
 		MeetURL   *string `json:"meetUrl"`
+		Year      int     `json:"year"`
+		Month     int     `json:"month"`
 	}
 
 	return func(c echo.Context) error {
@@ -61,7 +79,8 @@ func patchMeetingHandler(client *db.Client) echo.HandlerFunc {
 
 		ctx := c.Request().Context()
 		now := time.Now().Format(time.RFC3339)
-		ref := client.NewRef(meetingCollection).Child(meetingDocID)
+		docID := meetingDocID(req.Year, req.Month)
+		ref := client.NewRef(meetingCollection).Child(docID)
 
 		// Try update existing
 		updates := map[string]interface{}{

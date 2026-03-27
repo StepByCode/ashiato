@@ -2,15 +2,16 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
+import { usePeriod, periodsEqual, periodLabel, type Period } from "@/lib/period-context";
 
 export type WorkflowStep = "定例" | "作成" | "広報";
 
-const months = ["2026.4月", "2026.3月", "2026.2月", "2026.1月"] as const;
-const currentMonth = "2026.2月";
 const workflowSteps = [
   { label: "定例" as const, href: "/meeting" },
   { label: "作成" as const, href: "/" },
@@ -40,6 +41,8 @@ export function WorkflowShell({
   isWorkflowComplete?: boolean;
   children: ReactNode;
 }) {
+  const { periods, selectedPeriod, selectPeriod, refetchPeriods } = usePeriod();
+
   const [themeMode, setThemeMode] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
 
@@ -56,8 +59,50 @@ export function WorkflowShell({
     return isWorkflowStep(savedStep) ? savedStep : activeStep;
   });
   const [showCompleteLabel, setShowCompleteLabel] = useState(false);
+  const [provisioning, setProvisioning] = useState(false);
 
   const progressWidth = isWorkflowComplete ? "calc(100% - 4rem)" : progressWidths[animatedStep];
+
+  // Build display months from periods (up to 4, newest first).
+  const displayMonths: Period[] =
+    periods.length > 0
+      ? periods.slice(0, 4)
+      : [selectedPeriod];
+
+  // 当月・来月のうち未発行の月を検出する。
+  const missingPeriods: Period[] = (() => {
+    const now = new Date();
+    const targets: Period[] = [
+      { year: now.getFullYear(), month: now.getMonth() + 1 }, // 当月
+    ];
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    targets.push({ year: next.getFullYear(), month: next.getMonth() + 1 }); // 来月
+
+    return targets.filter(
+      (t) => !periods.some((p) => periodsEqual(p, t))
+    );
+  })();
+
+  const handleProvision = async () => {
+    if (missingPeriods.length === 0) return;
+    setProvisioning(true);
+    try {
+      for (const target of missingPeriods) {
+        await apiFetch("/api/v1/workflow-periods/provision", null, {
+          method: "POST",
+          body: JSON.stringify({ year: target.year, month: target.month }),
+        });
+      }
+      await refetchPeriods();
+      // 発行した中で最も新しい月に遷移
+      const newest = missingPeriods[missingPeriods.length - 1];
+      selectPeriod(newest);
+    } catch {
+      // ignore
+    } finally {
+      setProvisioning(false);
+    }
+  };
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", themeMode === "dark");
@@ -96,20 +141,41 @@ export function WorkflowShell({
           </div>
 
           <div className="mt-8 flex flex-1 flex-col justify-center gap-3">
-            {months.map((month) => (
-              <Badge
-                key={month}
-                variant="outline"
-                className={cn(
-                  "min-h-12 rounded-full border px-4 py-3 text-base font-semibold shadow-sm",
-                  month === currentMonth
-                    ? "border-primary/30 bg-primary text-primary-foreground"
-                    : "border-border/70 bg-background/80 text-foreground"
-                )}
+            {displayMonths.map((period) => {
+              const isSelected = periodsEqual(period, selectedPeriod);
+              return (
+                <button
+                  key={`${period.year}-${period.month}`}
+                  type="button"
+                  onClick={() => selectPeriod(period)}
+                >
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "min-h-12 rounded-full border px-4 py-3 text-base font-semibold shadow-sm cursor-pointer",
+                      isSelected
+                        ? "border-primary/30 bg-primary text-primary-foreground"
+                        : "border-border/70 bg-background/80 text-foreground hover:bg-background/95"
+                    )}
+                  >
+                    {periodLabel(period)}
+                  </Badge>
+                </button>
+              );
+            })}
+            {missingPeriods.length > 0 && (
+              <button
+                type="button"
+                disabled={provisioning}
+                onClick={handleProvision}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-dashed border-border/70 px-4 py-3 text-sm font-semibold text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
               >
-                {month}
-              </Badge>
-            ))}
+                <Plus className="size-4" />
+                {provisioning
+                  ? "発行中..."
+                  : missingPeriods.map((p) => periodLabel(p)).join("・") + " を発行"}
+              </button>
+            )}
           </div>
 
           <div className="absolute bottom-4 right-4 inline-grid grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-background/80 p-1 shadow-sm">
@@ -150,20 +216,39 @@ export function WorkflowShell({
               <div className="lg:hidden">
                 <div className="flex items-center justify-between gap-3 pb-1">
                   <div className="flex min-w-0 gap-3 overflow-x-auto">
-                    {months.map((month) => (
-                      <Badge
-                        key={month}
-                        variant="outline"
-                        className={cn(
-                          "min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold shadow-sm",
-                          month === currentMonth
-                            ? "border-primary/30 bg-primary text-primary-foreground"
-                            : "border-border/70 bg-background/80 text-foreground"
-                        )}
+                    {displayMonths.map((period) => {
+                      const isSelected = periodsEqual(period, selectedPeriod);
+                      return (
+                        <button
+                          key={`mobile-${period.year}-${period.month}`}
+                          type="button"
+                          onClick={() => selectPeriod(period)}
+                        >
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold shadow-sm cursor-pointer",
+                              isSelected
+                                ? "border-primary/30 bg-primary text-primary-foreground"
+                                : "border-border/70 bg-background/80 text-foreground"
+                            )}
+                          >
+                            {periodLabel(period)}
+                          </Badge>
+                        </button>
+                      );
+                    })}
+                    {missingPeriods.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={provisioning}
+                        onClick={handleProvision}
+                        className="flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-border/70 px-3 text-xs font-semibold text-muted-foreground shadow-sm hover:border-primary/40 hover:text-foreground disabled:opacity-50"
                       >
-                        {month}
-                      </Badge>
-                    ))}
+                        <Plus className="size-3" />
+                        {provisioning ? "..." : "発行"}
+                      </button>
+                    )}
                   </div>
 
                   <div className="inline-grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
@@ -250,7 +335,7 @@ export function WorkflowShell({
                       )}
                     >
                       <span className="text-4xl font-black uppercase tracking-[0.2em] text-zinc-700 dark:text-primary sm:text-5xl">
-                        complete！
+                        complete!
                       </span>
                     </div>
                   </div>

@@ -1,6 +1,7 @@
 package simpleapi
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 	"unicode/utf8"
@@ -26,9 +27,22 @@ type ChannelResponse struct {
 
 const (
 	templateCollection = "publicity_template"
-	templateDocID      = "default"
 	channelsCollection = "publicity_channels"
 )
+
+func templateDocID(year, month int) string {
+	if year == 0 || month == 0 {
+		return "default"
+	}
+	return fmt.Sprintf("%d_%02d", year, month)
+}
+
+func channelsCollectionForPeriod(year, month int) string {
+	if year == 0 || month == 0 {
+		return channelsCollection
+	}
+	return fmt.Sprintf("%s_%d_%02d", channelsCollection, year, month)
+}
 
 // RegisterPublicityRoutes registers Publicity API endpoints.
 func RegisterPublicityRoutes(g *echo.Group, client *db.Client) {
@@ -40,7 +54,9 @@ func RegisterPublicityRoutes(g *echo.Group, client *db.Client) {
 
 func getTemplateHandler(client *db.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		ref := client.NewRef(templateCollection).Child(templateDocID)
+		year, month := parsePeriodParams(c)
+		docID := templateDocID(year, month)
+		ref := client.NewRef(templateCollection).Child(docID)
 		var resp TemplateResponse
 		if err := ref.Get(c.Request().Context(), &resp); err != nil || resp.UpdatedAt == "" {
 			return c.JSON(http.StatusOK, TemplateResponse{
@@ -54,7 +70,9 @@ func getTemplateHandler(client *db.Client) echo.HandlerFunc {
 
 func patchTemplateHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
-		Text string `json:"text"`
+		Text  string `json:"text"`
+		Year  int    `json:"year"`
+		Month int    `json:"month"`
 	}
 
 	return func(c echo.Context) error {
@@ -68,9 +86,10 @@ func patchTemplateHandler(client *db.Client) echo.HandlerFunc {
 
 		ctx := c.Request().Context()
 		now := time.Now().Format(time.RFC3339)
+		docID := templateDocID(req.Year, req.Month)
 		data := TemplateResponse{Text: req.Text, UpdatedAt: now}
 
-		ref := client.NewRef(templateCollection).Child(templateDocID)
+		ref := client.NewRef(templateCollection).Child(docID)
 		if err := ref.Set(ctx, data); err != nil {
 			return internalError(c)
 		}
@@ -80,10 +99,17 @@ func patchTemplateHandler(client *db.Client) echo.HandlerFunc {
 
 func getChannelsHandler(client *db.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		ref := client.NewRef(channelsCollection)
+		year, month := parsePeriodParams(c)
+		collection := channelsCollectionForPeriod(year, month)
+		ref := client.NewRef(collection)
 		var all map[string]ChannelResponse
 		if err := ref.Get(c.Request().Context(), &all); err != nil || len(all) == 0 {
-			return c.JSON(http.StatusOK, map[string]interface{}{"channels": defaultChannels()})
+			// Initialize default channels for this period.
+			defaults := defaultChannels()
+			for _, ch := range defaults {
+				_ = client.NewRef(collection).Child(ch.ID).Set(c.Request().Context(), ch)
+			}
+			return c.JSON(http.StatusOK, map[string]interface{}{"channels": defaults})
 		}
 
 		channels := make([]ChannelResponse, 0, len(all))
@@ -100,6 +126,8 @@ func getChannelsHandler(client *db.Client) echo.HandlerFunc {
 func patchChannelStateHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
+		Year  int    `json:"year"`
+		Month int    `json:"month"`
 	}
 
 	validChannelStates := map[string]bool{
@@ -119,7 +147,8 @@ func patchChannelStateHandler(client *db.Client) echo.HandlerFunc {
 
 		ctx := c.Request().Context()
 		now := time.Now().Format(time.RFC3339)
-		ref := client.NewRef(channelsCollection).Child(channelID)
+		collection := channelsCollectionForPeriod(req.Year, req.Month)
+		ref := client.NewRef(collection).Child(channelID)
 
 		var existing ChannelResponse
 		if err := ref.Get(ctx, &existing); err != nil || existing.ID == "" {

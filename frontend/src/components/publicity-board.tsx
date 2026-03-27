@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
+import { usePeriod } from "@/lib/period-context";
 
 import { WorkflowShell } from "./workflow-shell";
 
@@ -51,6 +52,7 @@ const channelStateMeta: Record<
 };
 
 export function PublicityBoard() {
+  const { selectedPeriod } = usePeriod();
   const [template, setTemplate] = useState("");
   const [channels, setChannels] = useState<ChannelCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,11 +62,12 @@ export function PublicityBoard() {
   } | null>(null);
   const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (year: number, month: number) => {
+    setLoading(true);
     try {
       const [templateRes, channelsRes] = await Promise.all([
-        apiFetch("/api/v1/publicity/template", null),
-        apiFetch("/api/v1/publicity/channels", null),
+        apiFetch(`/api/v1/publicity/template?year=${year}&month=${month}`, null),
+        apiFetch(`/api/v1/publicity/channels?year=${year}&month=${month}`, null),
       ]);
       if (templateRes.ok) {
         const data = await templateRes.json();
@@ -81,15 +84,15 @@ export function PublicityBoard() {
         setChannels(fetched);
       }
     } catch {
-      // API unreachable – show empty state
+      // API unreachable - show empty state
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchData(selectedPeriod.year, selectedPeriod.month);
+  }, [fetchData, selectedPeriod.year, selectedPeriod.month]);
 
   const templateLength = template.length;
   const isWorkflowComplete = channels.length > 0 && channels.every((channel) => channel.state === "done");
@@ -100,7 +103,7 @@ export function PublicityBoard() {
     templateTimer.current = setTimeout(async () => {
       await apiFetch("/api/v1/publicity/template", null, {
         method: "PATCH",
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, year: selectedPeriod.year, month: selectedPeriod.month }),
       });
     }, 600);
   };
@@ -115,7 +118,7 @@ export function PublicityBoard() {
     try {
       await apiFetch(`/api/v1/publicity/channels/${id}/state`, null, {
         method: "PATCH",
-        body: JSON.stringify({ state }),
+        body: JSON.stringify({ state, year: selectedPeriod.year, month: selectedPeriod.month }),
       });
     } catch {
       // ignore network errors

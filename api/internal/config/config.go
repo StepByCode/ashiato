@@ -16,6 +16,7 @@ type Config struct {
 	Port                    string
 	ResendAPIKey            string
 	InviteFromEmail         string
+	CronSecret              string
 }
 
 func Load() (Config, error) {
@@ -29,6 +30,7 @@ func Load() (Config, error) {
 		Port:                    defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
 		ResendAPIKey:            strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 		InviteFromEmail:         defaultValue(strings.TrimSpace(os.Getenv("INVITE_FROM_EMAIL")), "no-reply@stepbycode.work"),
+		CronSecret:              strings.TrimSpace(os.Getenv("CRON_SECRET")),
 	}
 
 	if cfg.DefaultOrgName == "" {

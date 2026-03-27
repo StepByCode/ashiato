@@ -18,6 +18,8 @@ type TaskResponse struct {
 	Owner     string `json:"owner"`
 	State     string `json:"state"`
 	URL       string `json:"url"`
+	Year      int    `json:"year,omitempty"`
+	Month     int    `json:"month,omitempty"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 }
@@ -32,6 +34,13 @@ var validStates = map[string]bool{
 
 const tasksCollection = "simple_tasks"
 
+func tasksCollectionForPeriod(year, month int) string {
+	if year == 0 || month == 0 {
+		return tasksCollection
+	}
+	return fmt.Sprintf("%s_%d_%02d", tasksCollection, year, month)
+}
+
 // RegisterTaskRoutes registers Task API endpoints on the given Echo group.
 func RegisterTaskRoutes(g *echo.Group, client *db.Client) {
 	g.GET("/tasks", getTasksHandler(client))
@@ -44,9 +53,10 @@ func RegisterTaskRoutes(g *echo.Group, client *db.Client) {
 func getTasksHandler(client *db.Client) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
-		month := c.QueryParam("month")
+		year, month := parsePeriodParams(c)
+		collection := tasksCollectionForPeriod(year, month)
 
-		ref := client.NewRef(tasksCollection)
+		ref := client.NewRef(collection)
 		var all map[string]TaskResponse
 		if err := ref.OrderByChild("createdAt").Get(ctx, &all); err != nil {
 			return internalError(c)
@@ -54,20 +64,6 @@ func getTasksHandler(client *db.Client) echo.HandlerFunc {
 
 		tasks := make([]TaskResponse, 0, len(all))
 		for _, t := range all {
-			// Filter by month if specified (format: "2026-02")
-			if month != "" {
-				var y, m int
-				if _, parseErr := fmt.Sscanf(month, "%d-%d", &y, &m); parseErr != nil {
-					return validationError(c, "month", "must be YYYY-MM format")
-				}
-				createdAt, err := time.Parse(time.RFC3339, t.CreatedAt)
-				if err != nil {
-					continue
-				}
-				if createdAt.Year() != y || int(createdAt.Month()) != m {
-					continue
-				}
-			}
 			tasks = append(tasks, t)
 		}
 
@@ -79,6 +75,8 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
 		Title string `json:"title"`
 		Owner string `json:"owner"`
+		Year  int    `json:"year"`
+		Month int    `json:"month"`
 	}
 
 	return func(c echo.Context) error {
@@ -95,6 +93,7 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 			return validationError(c, "owner", "is required")
 		}
 
+		collection := tasksCollectionForPeriod(req.Year, req.Month)
 		id := "task-" + uuid.New().String()[:8]
 		now := time.Now().Format(time.RFC3339)
 		task := TaskResponse{
@@ -103,11 +102,13 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 			Owner:     req.Owner,
 			State:     "in_progress",
 			URL:       "",
+			Year:      req.Year,
+			Month:     req.Month,
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
 
-		if err := client.NewRef(tasksCollection).Child(id).Set(c.Request().Context(), task); err != nil {
+		if err := client.NewRef(collection).Child(id).Set(c.Request().Context(), task); err != nil {
 			return internalError(c)
 		}
 
@@ -162,27 +163,38 @@ func patchTaskStateHandler(client *db.Client) echo.HandlerFunc {
 		}
 
 		ctx := c.Request().Context()
-		ref := client.NewRef(tasksCollection).Child(taskID)
-		var current TaskResponse
-		if err := ref.Get(ctx, &current); err != nil {
-			return internalError(c)
-		}
-		if current.ID == "" {
+
+		// Search for the task across all collections (current and period-specific).
+		task, ref := findTask(ctx, client, taskID)
+		if task == nil {
 			return notFoundError(c, "task not found")
 		}
 
-		if current.State == "approved" {
+		if task.State == "approved" {
 			return conflictError(c, "cannot transition from approved state")
 		}
 
-		allowed := (current.State == "in_progress" && req.State == "done") ||
-			(current.State == "done" && req.State == "in_progress") ||
-			(current.State == "done" && req.State == "approved")
+		allowed := (task.State == "in_progress" && req.State == "done") ||
+			(task.State == "done" && req.State == "in_progress") ||
+			(task.State == "done" && req.State == "approved")
 		if !allowed {
-			return conflictError(c, fmt.Sprintf("cannot transition from %s to %s", current.State, req.State))
+			return conflictError(c, fmt.Sprintf("cannot transition from %s to %s", task.State, req.State))
 		}
 
-		return updateTaskField(c, client, taskID, "state", req.State)
+		now := time.Now().Format(time.RFC3339)
+		updates := map[string]interface{}{
+			"state":     req.State,
+			"updatedAt": now,
+		}
+		if err := ref.Update(ctx, updates); err != nil {
+			return internalError(c)
+		}
+
+		var updated TaskResponse
+		if err := ref.Get(ctx, &updated); err != nil {
+			return internalError(c)
+		}
+		return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})
 	}
 }
 
@@ -190,14 +202,9 @@ func updateTaskField(c echo.Context, client *db.Client, taskID, field, value str
 	ctx := c.Request().Context()
 	now := time.Now().Format(time.RFC3339)
 
-	ref := client.NewRef(tasksCollection).Child(taskID)
-
-	// Check existence first
-	var existing TaskResponse
-	if err := ref.Get(ctx, &existing); err != nil {
-		return internalError(c)
-	}
-	if existing.ID == "" {
+	// Search for the task across collections.
+	task, ref := findTask(ctx, client, taskID)
+	if task == nil {
 		return notFoundError(c, "task not found")
 	}
 
@@ -209,10 +216,37 @@ func updateTaskField(c echo.Context, client *db.Client, taskID, field, value str
 		return internalError(c)
 	}
 
-	var task TaskResponse
-	if err := ref.Get(ctx, &task); err != nil {
+	var updated TaskResponse
+	if err := ref.Get(ctx, &updated); err != nil {
 		return internalError(c)
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{"task": task})
+	return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})
+}
+
+// findTask searches for a task first in the default collection, then looks it up
+// by checking if the ID exists. For period-based tasks, the task ID contains
+// the info needed. We check the default collection first for backward compat.
+func findTask(ctx interface{ Done() <-chan struct{} }, client *db.Client, taskID string) (*TaskResponse, *db.Ref) {
+	// Try default collection first.
+	ref := client.NewRef(tasksCollection).Child(taskID)
+	var task TaskResponse
+	if err := ref.Get(ctx, &task); err == nil && task.ID != "" {
+		return &task, ref
+	}
+
+	// Search in period-based collections by scanning the root for matching collections.
+	// Since Firebase RTDB doesn't support listing collections easily, we check
+	// if the task has year/month info embedded. For now, scan a reasonable range.
+	now := time.Now()
+	for offset := -2; offset <= 3; offset++ {
+		t := now.AddDate(0, offset, 0)
+		collection := tasksCollectionForPeriod(t.Year(), int(t.Month()))
+		ref = client.NewRef(collection).Child(taskID)
+		if err := ref.Get(ctx, &task); err == nil && task.ID != "" {
+			return &task, ref
+		}
+	}
+
+	return nil, nil
 }

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { getFirebaseAuth } from "./firebase";
+import { getFirebaseAuth, isFirebaseConfigured } from "./firebase";
 
 type AuthState = {
   user: User | null;
@@ -26,10 +26,12 @@ const AuthContext = createContext<AuthState>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isFirebaseConfigured);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (u) => {
+    const auth = getFirebaseAuth();
+    if (!auth) return;
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
     });
@@ -42,7 +44,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    await signOut(getFirebaseAuth());
+    const auth = getFirebaseAuth();
+    if (auth) await signOut(auth);
   };
 
   return (

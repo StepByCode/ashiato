@@ -100,6 +100,17 @@ func main() {
 	simpleapi.RegisterTaskRoutes(simpleGroup, dbClient)
 	simpleapi.RegisterMeetingRoutes(simpleGroup, dbClient)
 	simpleapi.RegisterPublicityRoutes(simpleGroup, dbClient)
+	simpleapi.RegisterProfileRoutes(simpleGroup, dbClient)
+
+	// Invite endpoint (creates Firebase user, sends Resend email, notifies Discord).
+	simpleapi.RegisterInviteRoutes(simpleGroup, simpleapi.InviteDeps{
+		DBClient:     dbClient,
+		FirebaseAuth: auth.NewFirebaseUserCreator(authClient),
+		ResendAPIKey: cfg.ResendAPIKey,
+		FromEmail:    cfg.InviteFromEmail,
+		Webhook:      webhook,
+		Logger:       logger,
+	})
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%s", cfg.Port),

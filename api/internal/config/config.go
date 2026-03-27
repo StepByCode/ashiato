@@ -14,6 +14,8 @@ type Config struct {
 	DefaultOrgSlug          string
 	OwnerEmails             map[string]struct{}
 	Port                    string
+	ResendAPIKey            string
+	InviteFromEmail         string
 }
 
 func Load() (Config, error) {
@@ -25,6 +27,8 @@ func Load() (Config, error) {
 		DefaultOrgSlug:          strings.TrimSpace(os.Getenv("DEFAULT_ORG_SLUG")),
 		OwnerEmails:             parseOwnerEmails(strings.TrimSpace(os.Getenv("OWNER_EMAILS"))),
 		Port:                    defaultValue(strings.TrimSpace(os.Getenv("PORT")), "8080"),
+		ResendAPIKey:            strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		InviteFromEmail:         defaultValue(strings.TrimSpace(os.Getenv("INVITE_FROM_EMAIL")), "no-reply@stepbycode.work"),
 	}
 
 	if cfg.DefaultOrgName == "" {

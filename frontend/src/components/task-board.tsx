@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { CheckCheck, ChevronDown, ExternalLink, Plus, RotateCcw } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { CheckCheck, ChevronDown, ExternalLink, Loader2, Plus, RotateCcw } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 
 import { WorkflowShell } from "./workflow-shell";
 
@@ -28,12 +29,6 @@ const taskStateLabels: Record<TaskState, string> = {
   approved: "Approved",
 };
 
-const initialTasks: Task[] = [
-  { id: "connpass", title: "connpass", owner: "kido", state: "in_progress", url: "" },
-  { id: "figma", title: "Figma", owner: "kitahara", state: "in_progress", url: "" },
-  { id: "place", title: "Place", owner: "nakai", state: "done", url: "" },
-];
-
 const stateMeta: Record<
   TaskState,
   {
@@ -51,12 +46,9 @@ const stateMeta: Record<
   },
 };
 
-function makeTaskId() {
-  return `task-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-}
-
 export function TaskBoard() {
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newOwner, setNewOwner] = useState<Owner | "">("");
@@ -64,40 +56,98 @@ export function TaskBoard() {
     taskId: string;
     type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
+  const urlTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const handleCreateTask = (event: FormEvent) => {
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/v1/tasks", null);
+      if (res.ok) {
+        const data = await res.json();
+        const fetched = (data.tasks ?? []).map((t: Record<string, string>) => ({
+          id: t.id,
+          title: t.title,
+          owner: t.owner as Owner,
+          state: t.state as TaskState,
+          url: t.url ?? "",
+        }));
+        setTasks(fetched);
+      }
+    } catch {
+      // API unreachable – show empty state
+    } finally {
+      setLoadingTasks(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  const handleCreateTask = async (event: FormEvent) => {
     event.preventDefault();
     if (!newTitle.trim() || !newOwner) return;
 
-    const task: Task = {
-      id: makeTaskId(),
-      title: newTitle.trim(),
-      owner: newOwner,
-      state: "in_progress",
-      url: "",
-    };
-
-    setTasks((prev) => [...prev, task]);
-    setNewTitle("");
-    setNewOwner("");
-    setCreateOpen(false);
+    try {
+      const res = await apiFetch("/api/v1/tasks", null, {
+        method: "POST",
+        body: JSON.stringify({ title: newTitle.trim(), owner: newOwner }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.task;
+        setTasks((prev) => [
+          ...prev,
+          { id: t.id, title: t.title, owner: t.owner as Owner, state: t.state as TaskState, url: t.url ?? "" },
+        ]);
+        setNewTitle("");
+        setNewOwner("");
+        setCreateOpen(false);
+      }
+    } catch {
+      // ignore network errors
+    }
   };
 
-  const updateOwner = (id: string, owner: Owner) => {
+  const updateOwner = async (id: string, owner: Owner) => {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, owner } : task)));
+    try {
+      await apiFetch(`/api/v1/tasks/${id}/owner`, null, {
+        method: "PATCH",
+        body: JSON.stringify({ owner }),
+      });
+    } catch {
+      // ignore network errors
+    }
   };
 
   const updateUrl = (id: string, url: string) => {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url } : task)));
+    if (urlTimers.current[id]) clearTimeout(urlTimers.current[id]);
+    urlTimers.current[id] = setTimeout(async () => {
+      await apiFetch(`/api/v1/tasks/${id}/url`, null, {
+        method: "PATCH",
+        body: JSON.stringify({ url }),
+      });
+    }, 600);
   };
 
-  const approveTask = (id: string) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, state: "approved" } : task)));
+  const changeTaskState = async (id: string, state: TaskState) => {
+    try {
+      const res = await apiFetch(`/api/v1/tasks/${id}/state`, null, {
+        method: "PATCH",
+        body: JSON.stringify({ state }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.task;
+        setTasks((prev) =>
+          prev.map((task) => (task.id === id ? { ...task, state: t.state as TaskState } : task))
+        );
+      }
+    } catch {
+      // ignore network errors
+    }
     setPendingAction(null);
-  };
-
-  const setTaskState = (id: string, state: TaskState) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, state } : task)));
   };
 
   const toJumpHref = (url: string) => {
@@ -107,14 +157,21 @@ export function TaskBoard() {
   };
 
   const runPendingAction = (taskId: string, type: "approve" | "mark_done" | "mark_in_progress") => {
-    if (type === "approve") {
-      approveTask(taskId);
-      return;
-    }
-
-    setTaskState(taskId, type === "mark_in_progress" ? "in_progress" : "done");
-    setPendingAction(null);
+    const nextState: TaskState =
+      type === "approve" ? "approved" : type === "mark_in_progress" ? "in_progress" : "done";
+    changeTaskState(taskId, nextState);
   };
+
+  if (loadingTasks) {
+    return (
+      <WorkflowShell activeStep="作成">
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          <Loader2 className="mr-2 size-5 animate-spin" />
+          読み込み中...
+        </div>
+      </WorkflowShell>
+    );
+  }
 
   return (
     <WorkflowShell activeStep="作成">

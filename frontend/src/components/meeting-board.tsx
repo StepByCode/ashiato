@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { CalendarDays, ChevronDown, Clock3, ExternalLink, Link2 } from "lucide-react";
+import { CalendarDays, ChevronDown, Clock3, ExternalLink, Link2, Loader2 } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 
 import { WorkflowShell } from "./workflow-shell";
 
@@ -59,12 +60,59 @@ const minuteOptions = [0, 15, 30, 45];
 
 export function MeetingBoard() {
   const [meetingAt, setMeetingAt] = useState(getDefaultMeetingDateTime);
-  const [meetUrl, setMeetUrl] = useState("https://meet.google.com/abc-defg-hij");
+  const [meetUrl, setMeetUrl] = useState("");
+  const [loadingMeeting, setLoadingMeeting] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const defaultDate = parseMeetingDateTime(getDefaultMeetingDateTime());
     return defaultDate ? new Date(defaultDate.getFullYear(), defaultDate.getMonth(), 1) : new Date();
   });
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initializedRef = useRef(false);
+
+  const saveMeeting = useCallback((nextMeetingAt: string, nextMeetUrl: string) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      const meetingDate = parseMeetingDateTime(nextMeetingAt);
+      const body: Record<string, string> = {};
+      if (meetingDate) {
+        body.meetingAt = meetingDate.toISOString();
+      }
+      body.meetUrl = nextMeetUrl;
+      await apiFetch("/api/v1/meeting", null, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+    }, 600);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch("/api/v1/meeting", null);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.meetingAt) {
+            const parsed = new Date(data.meetingAt);
+            if (!Number.isNaN(parsed.getTime())) {
+              const localVal = toLocalDateTimeValue(parsed);
+              setMeetingAt(localVal);
+              setCalendarMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+            }
+          }
+          if (data.meetUrl) {
+            setMeetUrl(data.meetUrl);
+          }
+          initializedRef.current = true;
+        }
+      } catch {
+        // API unreachable – use defaults
+      } finally {
+        initializedRef.current = true;
+        setLoadingMeeting(false);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -80,8 +128,10 @@ export function MeetingBoard() {
 
   const applyNextMeetingAt = (nextDate: Date) => {
     nextDate.setSeconds(0, 0);
-    setMeetingAt(toLocalDateTimeValue(nextDate));
+    const nextVal = toLocalDateTimeValue(nextDate);
+    setMeetingAt(nextVal);
     setCalendarMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+    if (initializedRef.current) saveMeeting(nextVal, meetUrl);
   };
 
   const handleSelectDate = (nextDay?: Date) => {
@@ -140,6 +190,17 @@ export function MeetingBoard() {
   }, [meetingAt, now]);
 
   const jumpHref = toJumpHref(meetUrl);
+
+  if (loadingMeeting) {
+    return (
+      <WorkflowShell activeStep="定例">
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          <Loader2 className="mr-2 size-5 animate-spin" />
+          読み込み中...
+        </div>
+      </WorkflowShell>
+    );
+  }
 
   return (
     <WorkflowShell activeStep="定例">
@@ -246,7 +307,11 @@ export function MeetingBoard() {
                   type="url"
                   placeholder="https://meet.google.com/..."
                   value={meetUrl}
-                  onChange={(event) => setMeetUrl(event.target.value)}
+                  onChange={(event) => {
+                    const nextUrl = event.target.value;
+                    setMeetUrl(nextUrl);
+                    if (initializedRef.current) saveMeeting(meetingAt, nextUrl);
+                  }}
                 />
                 {jumpHref ? (
                   <a

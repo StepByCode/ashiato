@@ -30,6 +30,12 @@ type Member = {
   email: string;
 };
 
+type MeResponse = {
+  user?: {
+    id?: string;
+  };
+};
+
 const fixedTasks = [
   { title: "イベント名", assigneeRequired: false },
   { title: "connpass URL", assigneeRequired: true },
@@ -96,6 +102,7 @@ export function TaskBoard() {
   const { selectedPeriod } = usePeriod();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [currentMemberId, setCurrentMemberId] = useState("");
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [isCreateOpen, setCreateOpen] = useState(false);
@@ -147,10 +154,23 @@ export function TaskBoard() {
       setMembers(
         (data.members ?? []).map((member: Record<string, string>) => ({
           id: member.id,
-          name: member.name || member.email,
+          name: member.name || "表示名未設定",
           email: member.email,
         }))
       );
+    } catch {
+      // ignore
+    }
+  }, [getIdToken]);
+
+  const fetchMe = useCallback(async () => {
+    try {
+      const token = await getIdToken();
+      if (!token) return;
+      const res = await apiFetch("/api/v1/me", token);
+      if (!res.ok) return;
+      const data = (await res.json()) as MeResponse;
+      setCurrentMemberId(data.user?.id ?? "");
     } catch {
       // ignore
     }
@@ -164,7 +184,8 @@ export function TaskBoard() {
 
   useEffect(() => {
     void fetchMembers();
-  }, [fetchMembers]);
+    void fetchMe();
+  }, [fetchMe, fetchMembers]);
 
   useEffect(() => {
     pollTimer.current = setInterval(() => {
@@ -175,6 +196,7 @@ export function TaskBoard() {
       if (document.visibilityState === "visible") {
         void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
         void fetchMembers();
+        void fetchMe();
       }
     };
 
@@ -185,7 +207,7 @@ export function TaskBoard() {
       window.removeEventListener("focus", handleVisibility);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [fetchMembers, fetchTasks, selectedPeriod.month, selectedPeriod.year]);
+  }, [fetchMe, fetchMembers, fetchTasks, selectedPeriod.month, selectedPeriod.year]);
 
   const handleCreateTask = async (event: FormEvent) => {
     event.preventDefault();
@@ -230,7 +252,7 @@ export function TaskBoard() {
     setTasks((prev) =>
       prev.map((task) =>
         task.id === id
-          ? { ...task, assigneeId, assigneeName: assigneeId ? (member?.name ?? member?.email ?? "") : "" }
+          ? { ...task, assigneeId, assigneeName: assigneeId ? (member?.name ?? "表示名未設定") : "" }
           : task
       )
     );
@@ -323,7 +345,11 @@ export function TaskBoard() {
       <section className="grid gap-4">
         {tasks.map((task) => {
           const isEventNameTask = task.title === "イベント名";
-          const showApprove = !isEventNameTask && (task.state === "done" || task.state === "approved");
+          const hasAssignee = Boolean(task.assigneeId);
+          const isAssigneeSelf = Boolean(currentMemberId) && currentMemberId === task.assigneeId;
+          const showApprove =
+            !isEventNameTask && hasAssignee && !isAssigneeSelf && (task.state === "done" || task.state === "approved");
+          const showDoneAction = !isEventNameTask && hasAssignee && !showApprove;
           const isApproved = task.state === "approved";
           const isDoneLike = task.state !== "in_progress";
           const isApproveConfirmOpen =
@@ -367,7 +393,7 @@ export function TaskBoard() {
                             {allowEmptyAssignee ? <option value="">担当者なし</option> : <option value="">担当者</option>}
                             {members.map((member) => (
                               <option key={member.id} value={member.id}>
-                                {member.name || member.email}
+                                {member.name}
                               </option>
                             ))}
                           </select>
@@ -419,7 +445,7 @@ export function TaskBoard() {
                           </div>
                         ) : null}
                       </>
-                    ) : (
+                    ) : showDoneAction ? (
                       <>
                         <Button
                           type="button"
@@ -465,6 +491,10 @@ export function TaskBoard() {
                           </div>
                         ) : null}
                       </>
+                    ) : (
+                      <div className="flex min-h-12 w-full items-center justify-center rounded-full border border-border/70 px-5 text-sm font-semibold text-muted-foreground">
+                        {isEventNameTask ? "担当者不要" : hasAssignee ? "担当者が承認します" : "担当者を設定してください"}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -561,7 +591,7 @@ export function TaskBoard() {
                         <option value="">担当者</option>
                         {members.map((member) => (
                           <option key={member.id} value={member.id}>
-                            {member.name || member.email}
+                            {member.name}
                           </option>
                         ))}
                       </select>

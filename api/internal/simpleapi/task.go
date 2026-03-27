@@ -3,6 +3,7 @@ package simpleapi
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"firebase.google.com/go/v4/db"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+
+	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
 
 // TaskResponse matches the spec in docs/backend-api-request.md §4.1.
@@ -61,6 +64,9 @@ func getTasksHandler(client *db.Client) echo.HandlerFunc {
 		ref := client.NewRef(collection)
 		var all map[string]TaskResponse
 		if err := ref.Get(ctx, &all); err != nil || len(all) == 0 {
+			if err != nil {
+				slog.WarnContext(ctx, "task list fetch failed; returning empty list", "trace_id", appctx.TraceIDFromContext(ctx), "collection", collection, "year", year, "month", month, "error", err)
+			}
 			return c.JSON(http.StatusOK, map[string]interface{}{"tasks": []TaskResponse{}})
 		}
 
@@ -114,7 +120,7 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 		}
 
 		if err := client.NewRef(collection).Child(id).Set(c.Request().Context(), task); err != nil {
-			return internalError(c)
+			return internalErrorWithLog(c, "task create failed", err, "collection", collection, "task_id", id, "year", req.Year, "month", req.Month)
 		}
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{"task": task})
@@ -192,12 +198,12 @@ func patchTaskStateHandler(client *db.Client) echo.HandlerFunc {
 			"updatedAt": now,
 		}
 		if err := ref.Update(ctx, updates); err != nil {
-			return internalError(c)
+			return internalErrorWithLog(c, "task state update failed", err, "task_id", taskID)
 		}
 
 		var updated TaskResponse
 		if err := ref.Get(ctx, &updated); err != nil {
-			return internalError(c)
+			return internalErrorWithLog(c, "task fetch after state update failed", err, "task_id", taskID)
 		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})
 	}
@@ -218,12 +224,12 @@ func updateTaskField(c echo.Context, client *db.Client, taskID, field, value str
 		"updatedAt": now,
 	}
 	if err := ref.Update(ctx, updates); err != nil {
-		return internalError(c)
+		return internalErrorWithLog(c, "task field update failed", err, "task_id", taskID, "field", field)
 	}
 
 	var updated TaskResponse
 	if err := ref.Get(ctx, &updated); err != nil {
-		return internalError(c)
+		return internalErrorWithLog(c, "task fetch after field update failed", err, "task_id", taskID, "field", field)
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})

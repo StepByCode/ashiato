@@ -1,0 +1,744 @@
+openapi: 3.0.3
+info:
+  title: Ashiato API
+  version: 0.1.0
+  description: Backend-core API for Ashiato.
+servers:
+  - url: /
+tags:
+  - name: auth
+  - name: members
+  - name: workflow
+  - name: meetings
+  - name: tasks
+  - name: announcements
+  - name: internal
+paths:
+  /api/v1/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current actor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+  /api/v1/members:
+    get:
+      operationId: getMembers
+      tags: [members]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembersResponse"
+  /api/v1/workflow-periods:
+    get:
+      operationId: getWorkflowPeriods
+      tags: [workflow]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Workflow periods
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowPeriodsResponse"
+  /api/v1/meetings/{year}/{month}:
+    parameters:
+      - $ref: "#/components/parameters/YearParam"
+      - $ref: "#/components/parameters/MonthParam"
+    get:
+      operationId: getMeeting
+      tags: [meetings]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Meeting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: putMeeting
+      tags: [meetings]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutMeetingRequest"
+      responses:
+        "200":
+          description: Upserted meeting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/tasks:
+    get:
+      operationId: getTasks
+      tags: [tasks]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/YearQuery"
+        - $ref: "#/components/parameters/MonthQuery"
+      responses:
+        "200":
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TasksResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: postTask
+      tags: [tasks]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/tasks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/IdParam"
+    patch:
+      operationId: patchTask
+      tags: [tasks]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/tasks/{id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/IdParam"
+    post:
+      operationId: approveTask
+      tags: [tasks]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Approved task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/announcements/{year}/{month}:
+    parameters:
+      - $ref: "#/components/parameters/YearParam"
+      - $ref: "#/components/parameters/MonthParam"
+    get:
+      operationId: getAnnouncement
+      tags: [announcements]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Announcement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: putAnnouncement
+      tags: [announcements]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutAnnouncementRequest"
+      responses:
+        "200":
+          description: Upserted announcement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/announcements/{id}/publish:
+    parameters:
+      - $ref: "#/components/parameters/IdParam"
+    post:
+      operationId: publishAnnouncement
+      tags: [announcements]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishAnnouncementRequest"
+      responses:
+        "200":
+          description: Publish requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /internal/v1/announcement-publish-requests:
+    get:
+      operationId: getAnnouncementPublishRequests
+      tags: [internal]
+      security:
+        - BotToken: []
+      responses:
+        "200":
+          description: Pending publish requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishRequestsResponse"
+  /internal/v1/announcement-publish-requests/{id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/IdParam"
+    post:
+      operationId: completeAnnouncementPublishRequest
+      tags: [internal]
+      security:
+        - BotToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompletePublishRequest"
+      responses:
+        "200":
+          description: Completed announcement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /internal/v1/announcement-publish-requests/{id}/fail:
+    parameters:
+      - $ref: "#/components/parameters/IdParam"
+    post:
+      operationId: failAnnouncementPublishRequest
+      tags: [internal]
+      security:
+        - BotToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FailPublishRequest"
+      responses:
+        "200":
+          description: Failed announcement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    BotToken:
+      type: apiKey
+      in: header
+      name: X-Bot-Token
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    YearParam:
+      name: year
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 2000
+        maximum: 2100
+    MonthParam:
+      name: month
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 12
+    YearQuery:
+      name: year
+      in: query
+      required: true
+      schema:
+        type: integer
+        minimum: 2000
+        maximum: 2100
+    MonthQuery:
+      name: month
+      in: query
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 12
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    MeResponse:
+      type: object
+      required: [user, organization]
+      properties:
+        user:
+          $ref: "#/components/schemas/ActorUser"
+        organization:
+          $ref: "#/components/schemas/Organization"
+    MembersResponse:
+      type: object
+      required: [members]
+      properties:
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+    WorkflowPeriodsResponse:
+      type: object
+      required: [periods]
+      properties:
+        periods:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowPeriod"
+    TasksResponse:
+      type: object
+      required: [tasks]
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+    PublishRequestsResponse:
+      type: object
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishRequest"
+    ActorUser:
+      type: object
+      required: [id, subject, email, name, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        subject:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          $ref: "#/components/schemas/OrganizationRole"
+    Organization:
+      type: object
+      required: [id, slug, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+    Member:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          $ref: "#/components/schemas/OrganizationRole"
+    WorkflowPeriod:
+      type: object
+      required: [year, month, meeting_status, task_completion_status, announcement_status, next_stage_ready]
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        meeting_status:
+          type: string
+        task_completion_status:
+          type: string
+        announcement_status:
+          type: string
+        next_stage_ready:
+          type: boolean
+    Meeting:
+      type: object
+      required: [id, year, month, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+        month:
+          type: integer
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+        meeting_url:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/MeetingStatus"
+    Task:
+      type: object
+      required:
+        [id, title, status, approver_ids, approved_approver_ids, approval_state, version, year, month]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        reference_url:
+          type: string
+          nullable: true
+        assignee_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_by:
+          type: string
+          format: uuid
+        approver_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        approved_approver_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        approval_state:
+          $ref: "#/components/schemas/ApprovalState"
+        version:
+          type: integer
+        year:
+          type: integer
+        month:
+          type: integer
+    Announcement:
+      type: object
+      required: [id, year, month, body, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+        month:
+          type: integer
+        body:
+          type: string
+        status:
+          $ref: "#/components/schemas/AnnouncementStatus"
+        publish_channel:
+          type: string
+          nullable: true
+        discord_message_id:
+          type: string
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+    PublishRequest:
+      type: object
+      required: [announcement_id, year, month, body, publish_channel]
+      properties:
+        announcement_id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+        month:
+          type: integer
+        body:
+          type: string
+        publish_channel:
+          type: string
+    CreateTaskRequest:
+      type: object
+      required: [title, year, month, status, approver_ids]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        reference_url:
+          type: string
+          nullable: true
+        assignee_id:
+          type: string
+          format: uuid
+          nullable: true
+        approver_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+    UpdateTaskRequest:
+      type: object
+      required: [title, status, approver_ids, version]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        reference_url:
+          type: string
+          nullable: true
+        assignee_id:
+          type: string
+          format: uuid
+          nullable: true
+        approver_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        version:
+          type: integer
+          minimum: 1
+    PutMeetingRequest:
+      type: object
+      required: [status]
+      properties:
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+        meeting_url:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/MeetingStatus"
+    PutAnnouncementRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+        publish_channel:
+          type: string
+          nullable: true
+    PublishAnnouncementRequest:
+      type: object
+      required: [publish_channel]
+      properties:
+        publish_channel:
+          type: string
+          minLength: 1
+    CompletePublishRequest:
+      type: object
+      required: [discord_message_id]
+      properties:
+        discord_message_id:
+          type: string
+          minLength: 1
+    FailPublishRequest:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          minLength: 1
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    OrganizationRole:
+      type: string
+      enum: [OWNER, EDITOR, VIEWER]
+    TaskStatus:
+      type: string
+      enum: [todo, in_progress, done]
+    ApprovalState:
+      type: string
+      enum: [not_required, pending, partially_approved, approved]
+    MeetingStatus:
+      type: string
+      enum: [planned, completed, cancelled]
+    AnnouncementStatus:
+      type: string
+      enum: [draft, publish_requested, published, publish_failed]

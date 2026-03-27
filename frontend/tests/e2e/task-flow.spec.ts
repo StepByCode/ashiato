@@ -1,12 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+import { resetState } from "./utils";
+
 test.describe("タスクフロー", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await page.evaluate(() => {
-      localStorage.clear();
-    });
-    await page.reload();
+    await resetState(page);
   });
 
   test("作成→Done→Approve まで完了できる", async ({ page }) => {

@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { CalendarDays, ChevronDown, Clock3, ExternalLink, Link2 } from "lucide-react";
+import { CalendarDays, ChevronDown, Clock3, ExternalLink, Link2, RotateCcw } from "lucide-react";
 
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -51,7 +51,7 @@ const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const minuteOptions = [0, 15, 30, 45];
 
 export function MeetingBoard() {
-  const { meetingAt, meetUrl, setMeetingAt, setMeetUrl } = useWorkflowStore();
+  const { meetingAt, meetUrl, setMeetingAt, setMeetUrl, resetMeeting } = useWorkflowStore();
   const [now, setNow] = useState(Date.now());
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const defaultDate = parseMeetingDateTime(meetingAt);
@@ -145,9 +145,22 @@ export function MeetingBoard() {
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.85fr)]">
         <Card className="rounded-[1.75rem] border-border/70 bg-card/95 shadow-sm">
           <CardContent className="space-y-6 p-5 sm:p-6">
-            <div className="space-y-2">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">Regular Meeting</p>
-              <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">定例情報</h3>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">Regular Meeting</p>
+                <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">定例情報</h3>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 rounded-2xl px-4 text-sm font-semibold shadow-sm"
+                data-testid="reset-meeting"
+                onClick={resetMeeting}
+              >
+                <RotateCcw className="size-4" />
+                リセット
+              </Button>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">

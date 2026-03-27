@@ -41,7 +41,7 @@ const channelStateMeta: Record<
 };
 
 export function PublicityBoard() {
-  const { template, channels, setTemplate, updateChannelState } = useWorkflowStore();
+  const { template, channels, setTemplate, updateChannelState, resetPublicity } = useWorkflowStore();
   const [pendingAction, setPendingAction] = useState<{
     channelId: ChannelId;
     targetState: ChannelState;
@@ -60,12 +60,25 @@ export function PublicityBoard() {
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.9fr)]">
         <Card className="rounded-[1.75rem] border-border/70 bg-card/95 shadow-sm">
           <CardContent className="space-y-6 p-5 sm:p-6">
-            <div className="space-y-2">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">Publicity Copy</p>
-              <h3 className="flex items-center gap-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                <Megaphone className="size-5 text-primary" />
-                広報文章テンプレート
-              </h3>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">Publicity Copy</p>
+                <h3 className="flex items-center gap-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+                  <Megaphone className="size-5 text-primary" />
+                  広報文章テンプレート
+                </h3>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 rounded-2xl px-4 text-sm font-semibold shadow-sm"
+                data-testid="reset-publicity"
+                onClick={resetPublicity}
+              >
+                <RotateCcw className="size-4" />
+                リセット
+              </Button>
             </div>
 
             <div className="space-y-3">
@@ -103,6 +116,7 @@ export function PublicityBoard() {
             return (
               <Card
                 key={channel.id}
+                data-testid={`publicity-channel-${channel.id}`}
                 className={cn("rounded-[1.75rem] border-2 shadow-sm transition-colors", meta.cardClassName)}
               >
                 <CardContent className="p-5 sm:p-6">

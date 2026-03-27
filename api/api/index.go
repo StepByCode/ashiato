@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/dokkiitech/ashiato/api/internal/app"
+	"github.com/dokkiitech/ashiato/api/internal/corsutil"
 )
 
 var (
@@ -20,7 +21,7 @@ var (
 func Handler(w http.ResponseWriter, r *http.Request) {
 	initOnce.Do(func() {
 		httpHandler, _, _, initErr = app.NewHTTPHandler(context.Background())
-		allowedOrigins = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+		allowedOrigins = corsutil.BuildAllowedOrigins(parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")))
 	})
 
 	if initErr != nil {
@@ -29,7 +30,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	origin := r.Header.Get("Origin")
-	if origin != "" && isOriginAllowed(origin, allowedOrigins) {
+	if origin != "" && corsutil.IsOriginAllowed(origin, allowedOrigins) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Origin,Content-Type,Accept,Authorization")
@@ -62,21 +63,6 @@ func parseAllowedOrigins(raw string) []string {
 		}
 	}
 	return origins
-}
-
-func isOriginAllowed(origin string, allowed []string) bool {
-	for _, a := range allowed {
-		if a == origin {
-			return true
-		}
-		if strings.HasPrefix(a, "*.") {
-			suffix := a[1:] // e.g. ".vercel.app"
-			if strings.HasSuffix(origin, suffix) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func normalizePath(path string) string {

@@ -22,8 +22,10 @@ type WorkflowPeriodResponse struct {
 }
 
 // RegisterWorkflowPeriodRoutes registers the workflow-periods endpoint.
+// RegisterWorkflowPeriodRoutes registers workflow period endpoints.
 func RegisterWorkflowPeriodRoutes(g *echo.Group, client *db.Client) {
 	g.GET("/workflow-periods", getWorkflowPeriodsHandler(client))
+	g.POST("/workflow-periods/provision", provisionWorkflowPeriodHandler(client))
 }
 
 func getWorkflowPeriodsHandler(client *db.Client) echo.HandlerFunc {
@@ -158,6 +160,53 @@ func getWorkflowPeriodsHandler(client *db.Client) echo.HandlerFunc {
 		})
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"periods": results})
+	}
+}
+
+// provisionWorkflowPeriodHandler creates initial meeting and channel data for a given year/month.
+func provisionWorkflowPeriodHandler(client *db.Client) echo.HandlerFunc {
+	type request struct {
+		Year  int `json:"year"`
+		Month int `json:"month"`
+	}
+
+	return func(c echo.Context) error {
+		var req request
+		if err := c.Bind(&req); err != nil {
+			return validationError(c, "body", "invalid JSON")
+		}
+		if req.Year < 2000 || req.Year > 2100 {
+			return validationError(c, "year", "must be between 2000 and 2100")
+		}
+		if req.Month < 1 || req.Month > 12 {
+			return validationError(c, "month", "must be between 1 and 12")
+		}
+
+		ctx := c.Request().Context()
+		now := time.Now().Format(time.RFC3339)
+
+		// Meeting が未作成なら初期化
+		meetDocID := meetingDocID(req.Year, req.Month)
+		meetRef := client.NewRef(meetingCollection).Child(meetDocID)
+		var existingMeet MeetingResponse
+		if err := meetRef.Get(ctx, &existingMeet); err != nil || existingMeet.UpdatedAt == "" {
+			initial := MeetingResponse{MeetURL: "", UpdatedAt: now}
+			_ = meetRef.Set(ctx, initial)
+		}
+
+		// Publicity channels が未作成なら初期化
+		chCollection := channelsCollectionForPeriod(req.Year, req.Month)
+		var existingCh map[string]ChannelResponse
+		if err := client.NewRef(chCollection).Get(ctx, &existingCh); err != nil || len(existingCh) == 0 {
+			for _, ch := range defaultChannels() {
+				_ = client.NewRef(chCollection).Child(ch.ID).Set(ctx, ch)
+			}
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"status":  "ok",
+			"message": fmt.Sprintf("provisioned %d/%02d", req.Year, req.Month),
+		})
 	}
 }
 

@@ -2,10 +2,12 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 import { usePeriod, periodsEqual, periodLabel, type Period } from "@/lib/period-context";
 
 export type WorkflowStep = "定例" | "作成" | "広報";
@@ -39,7 +41,7 @@ export function WorkflowShell({
   isWorkflowComplete?: boolean;
   children: ReactNode;
 }) {
-  const { periods, selectedPeriod, selectPeriod } = usePeriod();
+  const { periods, selectedPeriod, selectPeriod, refetchPeriods } = usePeriod();
 
   const [themeMode, setThemeMode] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
@@ -57,6 +59,7 @@ export function WorkflowShell({
     return isWorkflowStep(savedStep) ? savedStep : activeStep;
   });
   const [showCompleteLabel, setShowCompleteLabel] = useState(false);
+  const [provisioning, setProvisioning] = useState(false);
 
   const progressWidth = isWorkflowComplete ? "calc(100% - 4rem)" : progressWidths[animatedStep];
 
@@ -65,6 +68,35 @@ export function WorkflowShell({
     periods.length > 0
       ? periods.slice(0, 4)
       : [selectedPeriod];
+
+  // Calculate the next month to provision (1 month after the newest period).
+  const nextProvisionTarget: Period = (() => {
+    if (periods.length === 0) {
+      const now = new Date();
+      return { year: now.getFullYear(), month: now.getMonth() + 2 };
+    }
+    const newest = periods[0];
+    const d = new Date(newest.year, newest.month, 1); // month is 0-indexed, so this is +1
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  })();
+
+  const handleProvision = async () => {
+    setProvisioning(true);
+    try {
+      const res = await apiFetch("/api/v1/workflow-periods/provision", null, {
+        method: "POST",
+        body: JSON.stringify({ year: nextProvisionTarget.year, month: nextProvisionTarget.month }),
+      });
+      if (res.ok) {
+        await refetchPeriods();
+        selectPeriod(nextProvisionTarget);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setProvisioning(false);
+    }
+  };
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", themeMode === "dark");
@@ -125,6 +157,15 @@ export function WorkflowShell({
                 </button>
               );
             })}
+            <button
+              type="button"
+              disabled={provisioning}
+              onClick={handleProvision}
+              className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-dashed border-border/70 px-4 py-3 text-sm font-semibold text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+            >
+              <Plus className="size-4" />
+              {provisioning ? "発行中..." : `${periodLabel(nextProvisionTarget)} を発行`}
+            </button>
           </div>
 
           <div className="absolute bottom-4 right-4 inline-grid grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-background/80 p-1 shadow-sm">
@@ -187,6 +228,15 @@ export function WorkflowShell({
                         </button>
                       );
                     })}
+                    <button
+                      type="button"
+                      disabled={provisioning}
+                      onClick={handleProvision}
+                      className="flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-border/70 px-3 text-xs font-semibold text-muted-foreground shadow-sm hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                    >
+                      <Plus className="size-3" />
+                      {provisioning ? "..." : "発行"}
+                    </button>
                   </div>
 
                   <div className="inline-grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">

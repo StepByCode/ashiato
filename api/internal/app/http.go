@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	firebase "firebase.google.com/go/v4"
 	"github.com/labstack/echo/v4"
@@ -68,7 +69,28 @@ func NewHTTPHandler(ctx context.Context) (http.Handler, config.Config, *slog.Log
 	e.Use(echomiddleware.Recover())
 	if len(cfg.CORSAllowedOrigins) > 0 {
 		e.Use(echomiddleware.CORSWithConfig(echomiddleware.CORSConfig{
-			AllowOrigins:     cfg.CORSAllowedOrigins,
+			AllowOrigins: cfg.CORSAllowedOrigins,
+			AllowOriginFunc: func(origin string) (bool, error) {
+				for _, allowed := range cfg.CORSAllowedOrigins {
+					if allowed == origin {
+						return true, nil
+					}
+					if strings.HasPrefix(allowed, "*.") {
+						suffix := allowed[1:] // e.g. ".vercel.app"
+						if strings.HasSuffix(origin, suffix) {
+							scheme := "https://"
+							if strings.HasPrefix(origin, "http://") {
+								scheme = "http://"
+							}
+							host := strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
+							if host != "" && origin == scheme+host {
+								return true, nil
+							}
+						}
+					}
+				}
+				return false, nil
+			},
 			AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 			AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
 			AllowCredentials: true,

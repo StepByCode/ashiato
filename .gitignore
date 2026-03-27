@@ -13,6 +13,9 @@ out
 # OS / Editor
 .DS_Store
 .vscode/
+.vscode/*
+!.vscode/
+!.vscode/extensions.json
 *.swp
 
 # Env / secrets

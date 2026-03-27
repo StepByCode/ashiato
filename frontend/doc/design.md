@@ -3,6 +3,10 @@
 要素が追加される際はここにも追加してください。
 (手動で変更することを推奨します)
 
+- tailwind-css
+- shadcn
+を利用し、シャープネスな管理画面を構成
+
 使用フォント　Inter(variable)
 SemiBoldを主に用い、URLはMidium
 

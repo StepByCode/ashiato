@@ -27,6 +27,10 @@ out
 *.sst
 *.met
 
+# TypeScript build info
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
 # Go binary
 api/server
 

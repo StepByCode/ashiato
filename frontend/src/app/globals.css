@@ -63,7 +63,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     color-scheme: dark;
     --accent: #df6900;
     --background: #24353e;

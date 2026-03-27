@@ -62,6 +62,7 @@ export function WorkflowShell({
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", themeMode === "dark");
+    document.documentElement.classList.toggle("light", themeMode === "light");
     window.localStorage.setItem(themeModeStorageKey, themeMode);
   }, [themeMode]);
 

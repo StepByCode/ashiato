@@ -185,9 +185,9 @@ export function TaskBoard() {
                           className={cn(
                             "h-10 w-full rounded-full px-4 text-sm font-semibold shadow-sm",
                             !isApproved &&
-                              "dark:bg-[#5E936C] dark:text-white dark:hover:bg-[#5E936C]",
+                              "dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-400",
                             isApproved &&
-                              "bg-emerald-100 text-emerald-900 hover:bg-emerald-100 dark:bg-[#5E936C] dark:text-white dark:hover:bg-[#5E936C]"
+                              "bg-emerald-100 text-emerald-900 hover:bg-emerald-100 dark:bg-emerald-700 dark:text-emerald-200 dark:hover:bg-emerald-700"
                           )}
                           disabled={isApproved}
                           onClick={() => {

@@ -90,6 +90,8 @@ flowchart LR
 - ビジネスロジック
 - 認可の最終判定
 - DB永続化
+- Coolify 配備時の待受ポートは `PORT` を優先し、未指定時は `9999`
+- ヘルスチェックは `/` または `/healthz`
 
 #### Discord Bot Service
 

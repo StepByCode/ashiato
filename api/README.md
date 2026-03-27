@@ -42,7 +42,7 @@ api/
 | `DEFAULT_ORG_NAME` | seed 組織名 |
 | `DEFAULT_ORG_SLUG` | seed 組織 slug |
 | `OWNER_EMAILS` | `OWNER` 扱いにする email の CSV |
-| `PORT` | サーバーポート（デフォルト 8080） |
+| `PORT` | サーバーポート（デフォルト `9999`、Coolify では Internal Port も同じ値に揃える） |
 
 ## 開発フロー
 
@@ -50,6 +50,13 @@ api/
 cd api
 go test ./...
 ```
+
+## Coolify デプロイ時の注意
+
+- アプリの待受ポート既定値は `9999`
+- Coolify の `Internal Port` も `9999` に設定する
+- ヘルスチェックパスは `/` または `/healthz` を使う
+- `PORT` を Coolify が注入する場合はその値を優先する
 
 OpenAPI と `sqlc` の再生成:
 

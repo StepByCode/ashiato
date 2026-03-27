@@ -84,6 +84,10 @@ func main() {
 	e.Use(authenticator.Middleware())
 	e.HTTPErrorHandler = jsonHTTPErrorHandler
 
+	e.GET("/", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	})
+
 	e.GET("/healthz", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})

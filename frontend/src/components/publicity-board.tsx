@@ -80,6 +80,8 @@ export function PublicityBoard() {
         }));
         setChannels(fetched);
       }
+    } catch {
+      // API unreachable – show empty state
     } finally {
       setLoading(false);
     }
@@ -110,10 +112,14 @@ export function PublicityBoard() {
       )
     );
     setPendingAction(null);
-    await apiFetch(`/api/v1/publicity/channels/${id}/state`, null, {
-      method: "PATCH",
-      body: JSON.stringify({ state }),
-    });
+    try {
+      await apiFetch(`/api/v1/publicity/channels/${id}/state`, null, {
+        method: "PATCH",
+        body: JSON.stringify({ state }),
+      });
+    } catch {
+      // ignore network errors
+    }
   };
 
   if (loading) {

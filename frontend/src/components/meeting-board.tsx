@@ -105,7 +105,10 @@ export function MeetingBoard() {
           }
           initializedRef.current = true;
         }
+      } catch {
+        // API unreachable – use defaults
       } finally {
+        initializedRef.current = true;
         setLoadingMeeting(false);
       }
     })();

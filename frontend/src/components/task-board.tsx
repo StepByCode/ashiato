@@ -72,6 +72,8 @@ export function TaskBoard() {
         }));
         setTasks(fetched);
       }
+    } catch {
+      // API unreachable – show empty state
     } finally {
       setLoadingTasks(false);
     }
@@ -85,29 +87,37 @@ export function TaskBoard() {
     event.preventDefault();
     if (!newTitle.trim() || !newOwner) return;
 
-    const res = await apiFetch("/api/v1/tasks", null, {
-      method: "POST",
-      body: JSON.stringify({ title: newTitle.trim(), owner: newOwner }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const t = data.task;
-      setTasks((prev) => [
-        ...prev,
-        { id: t.id, title: t.title, owner: t.owner as Owner, state: t.state as TaskState, url: t.url ?? "" },
-      ]);
-      setNewTitle("");
-      setNewOwner("");
-      setCreateOpen(false);
+    try {
+      const res = await apiFetch("/api/v1/tasks", null, {
+        method: "POST",
+        body: JSON.stringify({ title: newTitle.trim(), owner: newOwner }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.task;
+        setTasks((prev) => [
+          ...prev,
+          { id: t.id, title: t.title, owner: t.owner as Owner, state: t.state as TaskState, url: t.url ?? "" },
+        ]);
+        setNewTitle("");
+        setNewOwner("");
+        setCreateOpen(false);
+      }
+    } catch {
+      // ignore network errors
     }
   };
 
   const updateOwner = async (id: string, owner: Owner) => {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, owner } : task)));
-    await apiFetch(`/api/v1/tasks/${id}/owner`, null, {
-      method: "PATCH",
-      body: JSON.stringify({ owner }),
-    });
+    try {
+      await apiFetch(`/api/v1/tasks/${id}/owner`, null, {
+        method: "PATCH",
+        body: JSON.stringify({ owner }),
+      });
+    } catch {
+      // ignore network errors
+    }
   };
 
   const updateUrl = (id: string, url: string) => {
@@ -122,16 +132,20 @@ export function TaskBoard() {
   };
 
   const changeTaskState = async (id: string, state: TaskState) => {
-    const res = await apiFetch(`/api/v1/tasks/${id}/state`, null, {
-      method: "PATCH",
-      body: JSON.stringify({ state }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const t = data.task;
-      setTasks((prev) =>
-        prev.map((task) => (task.id === id ? { ...task, state: t.state as TaskState } : task))
-      );
+    try {
+      const res = await apiFetch(`/api/v1/tasks/${id}/state`, null, {
+        method: "PATCH",
+        body: JSON.stringify({ state }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.task;
+        setTasks((prev) =>
+          prev.map((task) => (task.id === id ? { ...task, state: t.state as TaskState } : task))
+        );
+      }
+    } catch {
+      // ignore network errors
     }
     setPendingAction(null);
   };

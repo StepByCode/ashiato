@@ -1,6 +1,7 @@
 package simpleapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -227,7 +228,7 @@ func updateTaskField(c echo.Context, client *db.Client, taskID, field, value str
 // findTask searches for a task first in the default collection, then looks it up
 // by checking if the ID exists. For period-based tasks, the task ID contains
 // the info needed. We check the default collection first for backward compat.
-func findTask(ctx interface{ Done() <-chan struct{} }, client *db.Client, taskID string) (*TaskResponse, *db.Ref) {
+func findTask(ctx context.Context, client *db.Client, taskID string) (*TaskResponse, *db.Ref) {
 	// Try default collection first.
 	ref := client.NewRef(tasksCollection).Child(taskID)
 	var task TaskResponse

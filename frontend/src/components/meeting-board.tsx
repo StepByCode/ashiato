@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { CalendarDays, ChevronDown, Clock3, ExternalLink, Link2 } from "lucide-react";
+import { CalendarDays, CalendarPlus, ChevronDown, Clock3, ExternalLink, Link2 } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -52,6 +52,22 @@ function toJumpHref(url: string) {
 
 function formatTimeUnit(value: number) {
   return String(value).padStart(2, "0");
+}
+
+function toGoogleCalendarDateTime(date: Date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function toCalendarAddHref(value: string) {
+  const parsedDate = parseMeetingDateTime(value);
+  if (!parsedDate) return "";
+
+  const endDate = new Date(parsedDate.getTime() + 60 * 60 * 1000);
+  const eventTitle = encodeURIComponent("Ashiato 定例ミーティング");
+  const eventDetails = encodeURIComponent("Ashiatoの定例ミーティングです。\n参加前にMeetリンクをご確認ください。");
+  const dates = `${toGoogleCalendarDateTime(parsedDate)}/${toGoogleCalendarDateTime(endDate)}`;
+
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&details=${eventDetails}&dates=${dates}`;
 }
 
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
@@ -140,6 +156,7 @@ export function MeetingBoard() {
   }, [meetingAt, now]);
 
   const jumpHref = toJumpHref(meetUrl);
+  const calendarAddHref = toCalendarAddHref(meetingAt);
 
   return (
     <WorkflowShell activeStep="定例">
@@ -232,7 +249,24 @@ export function MeetingBoard() {
                     </Popover.Positioner>
                   </Popover.Portal>
                 </Popover.Root>
-                <p className="text-sm text-muted-foreground">{formatMeetingDateTime(meetingAt)}</p>
+                {calendarAddHref ? (
+                  <a
+                    className={cn(
+                      buttonVariants({ variant: "outline" }),
+                      "inline-flex h-12 w-auto self-start rounded-2xl px-4 text-base font-semibold shadow-sm"
+                    )}
+                    href={calendarAddHref}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    カレンダーに追加
+                    <CalendarPlus className="size-4" />
+                  </a>
+                ) : (
+                  <div className="flex min-h-12 items-center justify-center rounded-2xl border border-dashed border-border/70 px-5 text-sm font-medium text-muted-foreground">
+                    日時未設定
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -276,7 +310,7 @@ export function MeetingBoard() {
             "rounded-[1.75rem] border-2 shadow-sm",
             countdown.isExpired
               ? "border-amber-300/60 bg-[color:color-mix(in_srgb,var(--accent)_16%,white)]"
-              : "border-sky-300/60 bg-[var(--surface-accent)]"
+              : "border-sky-300/60 bg-[var(--surface-accent)] dark:border-[#234C6A] dark:bg-[#1B3C53]"
           )}
         >
           <CardContent className="flex h-full flex-col justify-between gap-6 p-5 sm:p-6">

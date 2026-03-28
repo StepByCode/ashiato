@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -307,10 +308,7 @@ func rollbackInvite(ctx context.Context, deps InviteDeps, uid string) error {
 }
 
 func sendInviteEmail(ctx context.Context, apiKey, fromEmail, loginURL, toEmail, password string) error {
-	loginURL = strings.TrimSpace(loginURL)
-	if loginURL == "" {
-		loginURL = "https://backatage.stepbycode.work/login"
-	}
+	loginURL = normalizeInviteLoginURL(loginURL)
 
 	htmlBody := fmt.Sprintf(`
 <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 2rem;">
@@ -355,6 +353,24 @@ func sendInviteEmail(ctx context.Context, apiKey, fromEmail, loginURL, toEmail, 
 		return fmt.Errorf("resend returned %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 	}
 	return nil
+}
+
+func normalizeInviteLoginURL(raw string) string {
+	loginURL := strings.TrimSpace(raw)
+	if loginURL == "" {
+		return "https://backatage.stepbycode.work/login"
+	}
+
+	parsed, err := url.Parse(loginURL)
+	if err != nil {
+		return loginURL
+	}
+	if strings.EqualFold(parsed.Hostname(), "backstage.stepbycode.work") {
+		parsed.Host = strings.Replace(parsed.Host, "backstage.stepbycode.work", "backatage.stepbycode.work", 1)
+		return parsed.String()
+	}
+
+	return loginURL
 }
 
 func generatePassword(length int) (string, error) {

@@ -131,6 +131,7 @@ func NewHTTPHandler(ctx context.Context) (http.Handler, config.Config, *slog.Log
 		FirebaseAuth: userCreator,
 		ResendAPIKey: cfg.ResendAPIKey,
 		FromEmail:    cfg.InviteFromEmail,
+		LoginURL:     cfg.InviteLoginURL,
 		Webhook:      webhook,
 		Logger:       logger,
 	})

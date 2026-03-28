@@ -27,6 +27,7 @@ type InviteDeps struct {
 	FirebaseAuth FirebaseUserCreator
 	ResendAPIKey string
 	FromEmail    string
+	LoginURL     string
 	Webhook      *discord.WebhookClient
 	Logger       *slog.Logger
 }
@@ -126,7 +127,7 @@ func inviteHandler(deps InviteDeps) echo.HandlerFunc {
 			})
 		}
 
-		if err := sendInviteEmail(ctx, deps.ResendAPIKey, deps.FromEmail, email, password); err != nil {
+		if err := sendInviteEmail(ctx, deps.ResendAPIKey, deps.FromEmail, deps.LoginURL, email, password); err != nil {
 			deps.Logger.Error("failed to send invite email", slog.Any("error", err), slog.String("email", email))
 			rollbackInvite(ctx, deps, uid)
 			return c.JSON(http.StatusInternalServerError, ErrorResponse{
@@ -299,7 +300,12 @@ func rollbackInvite(ctx context.Context, deps InviteDeps, uid string) error {
 	return firstErr
 }
 
-func sendInviteEmail(ctx context.Context, apiKey, fromEmail, toEmail, password string) error {
+func sendInviteEmail(ctx context.Context, apiKey, fromEmail, loginURL, toEmail, password string) error {
+	loginURL = strings.TrimSpace(loginURL)
+	if loginURL == "" {
+		loginURL = "https://backstage.stepbycode.work/login"
+	}
+
 	htmlBody := fmt.Sprintf(`
 <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 2rem;">
   <h2 style="color: #df6900;">Backstage へようこそ</h2>
@@ -309,9 +315,11 @@ func sendInviteEmail(ctx context.Context, apiKey, fromEmail, toEmail, password s
     <p style="margin: 0.25rem 0;"><strong>メールアドレス:</strong> %s</p>
     <p style="margin: 0.25rem 0;"><strong>パスワード:</strong> %s</p>
   </div>
+  <p style="margin: 1rem 0;"><a href="%s" style="display: inline-block; background: #df6900; color: #fff; text-decoration: none; padding: 0.75rem 1rem; border-radius: 8px;">ログイン画面を開く</a></p>
+  <p style="margin: 0.5rem 0; font-size: 0.875rem;">ボタンが開けない場合: <a href="%s">%s</a></p>
   <p style="color: #666; font-size: 0.875rem;">初回ログイン後、プロフィールの登録をお願いします。</p>
-</div>`, toEmail, password)
-	textBody := fmt.Sprintf("Backstage に招待されました。\n\nメールアドレス: %s\n初回パスワード: %s\n\n初回ログイン後、プロフィールの登録をお願いします。", toEmail, password)
+</div>`, toEmail, password, loginURL, loginURL, loginURL)
+	textBody := fmt.Sprintf("Backstage に招待されました。\n\nメールアドレス: %s\n初回パスワード: %s\nログイン画面: %s\n\n初回ログイン後、プロフィールの登録をお願いします。", toEmail, password, loginURL)
 
 	payload := map[string]interface{}{
 		"from":    fromEmail,

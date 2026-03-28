@@ -220,6 +220,11 @@ export function TaskBoard() {
     if (!newTitle.trim() || !newAssigneeId) return;
     setCreateError("");
 
+    const targetPeriod = {
+      year: selectedPeriod.year,
+      month: selectedPeriod.month,
+    };
+
     try {
       const token = await getIdToken();
       const res = await apiFetch("/api/v1/tasks", token, {
@@ -227,8 +232,8 @@ export function TaskBoard() {
         body: JSON.stringify({
           title: newTitle.trim(),
           assigneeId: newAssigneeId,
-          year: selectedPeriod.year,
-          month: selectedPeriod.month,
+          year: targetPeriod.year,
+          month: targetPeriod.month,
         }),
       });
       if (res.ok) {
@@ -249,9 +254,9 @@ export function TaskBoard() {
         setNewTitle("");
         setNewAssigneeId("");
         setCreateOpen(false);
-        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
+        void fetchTasks(targetPeriod.year, targetPeriod.month, { silent: true });
       } else {
-        let message = `${periodLabel(selectedPeriod)} へのタスク保存に失敗しました。`;
+        let message = `${periodLabel(targetPeriod)} へのタスク保存に失敗しました。`;
         try {
           const errorData = await res.json();
           if (typeof errorData?.message === "string" && errorData.message.trim()) {
@@ -263,7 +268,7 @@ export function TaskBoard() {
         setCreateError(message);
       }
     } catch {
-      setCreateError(`${periodLabel(selectedPeriod)} へのタスク保存中に通信エラーが発生しました。`);
+      setCreateError(`${periodLabel(targetPeriod)} へのタスク保存中に通信エラーが発生しました。`);
     }
   };
 

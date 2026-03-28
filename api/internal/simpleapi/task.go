@@ -295,6 +295,12 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 		if req.AssigneeID == "" && !taskAllowsEmptyAssignee(title) {
 			return validationError(c, "assigneeId", "is required")
 		}
+		if req.Year < 2000 || req.Year > 2100 {
+			return validationError(c, "year", "must be between 2000 and 2100")
+		}
+		if req.Month < 1 || req.Month > 12 {
+			return validationError(c, "month", "must be between 1 and 12")
+		}
 
 		collection := tasksCollectionForPeriod(req.Year, req.Month)
 		id := "task-" + uuid.New().String()[:8]

@@ -24,7 +24,21 @@ func NewWebhookClient(webhookURL string) *WebhookClient {
 }
 
 type webhookPayload struct {
-	Content string `json:"content"`
+	Content string         `json:"content,omitempty"`
+	Embeds  []WebhookEmbed `json:"embeds,omitempty"`
+}
+
+type WebhookEmbed struct {
+	Title       string             `json:"title,omitempty"`
+	Description string             `json:"description,omitempty"`
+	Color       int                `json:"color,omitempty"`
+	Fields      []WebhookEmbedField `json:"fields,omitempty"`
+}
+
+type WebhookEmbedField struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline,omitempty"`
 }
 
 type webhookResponse struct {
@@ -33,13 +47,30 @@ type webhookResponse struct {
 
 // Send posts a message to Discord via webhook and returns the message ID.
 func (w *WebhookClient) Send(ctx context.Context, content string) (string, error) {
-	payload, err := json.Marshal(webhookPayload{Content: content})
+	return w.sendPayload(ctx, webhookPayload{Content: content})
+}
+
+func (w *WebhookClient) SendEmbed(ctx context.Context, title, description string, fields []WebhookEmbedField) (string, error) {
+	return w.sendPayload(ctx, webhookPayload{
+		Embeds: []WebhookEmbed{
+			{
+				Title:       title,
+				Description: description,
+				Color:       0xDF6900,
+				Fields:      fields,
+			},
+		},
+	})
+}
+
+func (w *WebhookClient) sendPayload(ctx context.Context, payload webhookPayload) (string, error) {
+	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("marshal webhook payload: %w", err)
 	}
 
 	// ?wait=true makes Discord return the created message (with ID).
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.webhookURL+"?wait=true", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.webhookURL+"?wait=true", bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("create webhook request: %w", err)
 	}

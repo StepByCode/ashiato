@@ -115,8 +115,11 @@ func inviteHandler(deps InviteDeps) echo.HandlerFunc {
 		// Notify Discord
 		if deps.Webhook != nil {
 			go func() {
-				msg := fmt.Sprintf("🆕 新しいメンバーを招待しました: %s", email)
-				if _, sendErr := deps.Webhook.Send(context.Background(), msg); sendErr != nil {
+				fields := []discord.WebhookEmbedField{
+					{Name: "メールアドレス", Value: email, Inline: false},
+					{Name: "初回パスワード", Value: password, Inline: false},
+				}
+				if _, sendErr := deps.Webhook.SendEmbed(context.Background(), "新しいメンバーを招待しました", "Backstage の招待を作成しました。", fields); sendErr != nil {
 					deps.Logger.Error("failed to send discord notification", slog.Any("error", sendErr))
 				}
 			}()

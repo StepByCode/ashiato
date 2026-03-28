@@ -5,11 +5,14 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"firebase.google.com/go/v4/db"
 	"github.com/labstack/echo/v4"
 
+	"github.com/dokkiitech/ashiato/api/internal/discord"
+	appctx2 "github.com/dokkiitech/ashiato/api/internal/middleware"
 	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
 
@@ -23,9 +26,10 @@ type MeetingResponse struct {
 const meetingCollection = "meeting_settings"
 
 // RegisterMeetingRoutes registers Meeting API endpoints.
-func RegisterMeetingRoutes(g *echo.Group, client *db.Client) {
+func RegisterMeetingRoutes(g *echo.Group, client *db.Client, webhook *discord.WebhookClient) {
 	g.GET("/meeting", getMeetingHandler(client))
 	g.PATCH("/meeting", patchMeetingHandler(client))
+	g.POST("/meeting/share", shareMeetingHandler(client, webhook))
 }
 
 func meetingDocID(year, month int) string {
@@ -131,5 +135,56 @@ func patchMeetingHandler(client *db.Client) echo.HandlerFunc {
 			return internalErrorWithLog(c, "meeting fetch after update failed", err, "doc_id", docID, "year", req.Year, "month", req.Month)
 		}
 		return c.JSON(http.StatusOK, resp)
+	}
+}
+
+func shareMeetingHandler(client *db.Client, webhook *discord.WebhookClient) echo.HandlerFunc {
+	type request struct {
+		Year  int `json:"year"`
+		Month int `json:"month"`
+	}
+
+	return func(c echo.Context) error {
+		actor, ok := appctx2.ActorFromContext(c.Request().Context())
+		if !ok {
+			return c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error: ErrorBody{Code: "UNAUTHORIZED", Message: "sign-in is required"},
+			})
+		}
+
+		var req request
+		if err := c.Bind(&req); err != nil {
+			return validationError(c, "body", "invalid JSON")
+		}
+
+		docID := meetingDocID(req.Year, req.Month)
+		var meeting MeetingResponse
+		if err := client.NewRef(meetingCollection).Child(docID).Get(c.Request().Context(), &meeting); err != nil || meeting.UpdatedAt == "" {
+			return notFoundError(c, "meeting not found")
+		}
+
+		meetingText := "未設定"
+		if meeting.MeetingAt != nil && *meeting.MeetingAt != "" {
+			if parsed, err := time.Parse(time.RFC3339, *meeting.MeetingAt); err == nil {
+				meetingText = parsed.In(time.FixedZone("JST", 9*60*60)).Format("2006/01/02 (Mon) 15:04")
+			}
+		}
+
+		meetURL := "未設定"
+		if strings.TrimSpace(meeting.MeetURL) != "" {
+			meetURL = strings.TrimSpace(meeting.MeetURL)
+		}
+
+		fields := []discord.WebhookEmbedField{
+			{Name: "対象月", Value: fmt.Sprintf("%d年%d月", req.Year, req.Month), Inline: true},
+			{Name: "定例日時", Value: meetingText, Inline: true},
+			{Name: "Meet URL", Value: meetURL, Inline: false},
+			{Name: "共有者", Value: actor.Name, Inline: false},
+		}
+		if _, err := webhook.SendEmbed(c.Request().Context(), "定例の予定を共有", "Backstage から定例予定を共有しました。", fields); err != nil {
+			return internalErrorWithLog(c, "meeting share failed", err, "year", req.Year, "month", req.Month)
+		}
+
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 }

@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { usePeriod } from "@/lib/period-context";
 
 import { WorkflowShell } from "./workflow-shell";
@@ -60,12 +61,15 @@ const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const minuteOptions = [0, 15, 30, 45];
 
 export function MeetingBoard() {
+  const { getIdToken } = useAuth();
   const { selectedPeriod } = usePeriod();
   const [meetingAt, setMeetingAt] = useState(getDefaultMeetingDateTime);
   const [meetUrl, setMeetUrl] = useState("");
   const [savedMeetUrl, setSavedMeetUrl] = useState("");
   const [savingMeetUrl, setSavingMeetUrl] = useState(false);
+  const [sharingMeeting, setSharingMeeting] = useState(false);
   const [meetUrlError, setMeetUrlError] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
   const [loadingMeeting, setLoadingMeeting] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -236,6 +240,29 @@ export function MeetingBoard() {
     }
   }, [meetingAt, meetUrl, selectedPeriod.month, selectedPeriod.year]);
 
+  const handleShareMeeting = useCallback(async () => {
+    setSharingMeeting(true);
+    setShareMessage("");
+    try {
+      const token = await getIdToken();
+      if (!token) {
+        setShareMessage("ログイン状態を確認できませんでした");
+        return;
+      }
+      const res = await apiFetch("/api/v1/meeting/share", token, {
+        method: "POST",
+        body: JSON.stringify({ year: selectedPeriod.year, month: selectedPeriod.month }),
+      });
+      if (!res.ok) {
+        setShareMessage("定例予定の共有に失敗しました");
+        return;
+      }
+      setShareMessage("Discord に共有しました");
+    } finally {
+      setSharingMeeting(false);
+    }
+  }, [getIdToken, selectedPeriod.month, selectedPeriod.year]);
+
   if (loadingMeeting) {
     return (
       <WorkflowShell activeStep="定例">
@@ -262,10 +289,13 @@ export function MeetingBoard() {
                 type="button"
                 variant="outline"
                 className="min-h-11 rounded-full border-2 border-[color:var(--accent)] bg-[color:var(--accent)] px-6 text-base font-semibold text-white shadow-lg shadow-[color:var(--accent)]/30 transition hover:-translate-y-0.5 hover:bg-[color:var(--accent)]/90 hover:shadow-xl focus-visible:ring-[color:var(--accent)]"
+                onClick={handleShareMeeting}
+                disabled={sharingMeeting}
               >
                 <Share2 className="size-4" />
-                定例の予定を共有
+                {sharingMeeting ? "共有中..." : "定例の予定を共有"}
               </Button>
+              {shareMessage ? <p className="text-sm text-muted-foreground">{shareMessage}</p> : null}
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">

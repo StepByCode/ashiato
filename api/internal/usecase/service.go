@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -76,6 +77,11 @@ type PutAnnouncementInput struct {
 type PublishAnnouncementInput struct {
 	ID             uuid.UUID
 	PublishChannel string
+}
+
+type ShareMeetingInput struct {
+	Year  int32
+	Month int32
 }
 
 func NewService(store *repository.Store, webhook *discord.WebhookClient, logger *slog.Logger, cfg config.Config, userCreator FirebaseUserCreator) *Service {
@@ -311,6 +317,42 @@ func (s *Service) PutMeeting(ctx context.Context, actor domain.Actor, input PutM
 		return domain.Meeting{}, domain.NewAppError(domain.ErrorCodeInternal, "failed to write audit log", err)
 	}
 	return result, nil
+}
+
+func (s *Service) ShareMeetingSchedule(ctx context.Context, actor domain.Actor, input ShareMeetingInput) error {
+	if !canWrite(actor.Role) {
+		return domain.NewAppError(domain.ErrorCodeForbidden, "write access denied", nil)
+	}
+	if err := validatePeriod(input.Year, input.Month); err != nil {
+		return err
+	}
+
+	meeting, err := s.GetMeeting(ctx, actor, input.Year, input.Month)
+	if err != nil {
+		return err
+	}
+
+	meetingText := "未設定"
+	if meeting.ScheduledAt != nil {
+		meetingText = meeting.ScheduledAt.In(time.FixedZone("JST", 9*60*60)).Format("2006/01/02 (Mon) 15:04")
+	}
+
+	meetURL := "未設定"
+	if meeting.MeetingURL != nil && strings.TrimSpace(*meeting.MeetingURL) != "" {
+		meetURL = strings.TrimSpace(*meeting.MeetingURL)
+	}
+
+	fields := []discord.WebhookEmbedField{
+		{Name: "対象月", Value: fmt.Sprintf("%d年%d月", input.Year, input.Month), Inline: true},
+		{Name: "定例日時", Value: meetingText, Inline: true},
+		{Name: "Meet URL", Value: meetURL, Inline: false},
+	}
+
+	if _, err := s.webhook.SendEmbed(ctx, "定例の予定を共有", "Backstage から定例予定を共有しました。", fields); err != nil {
+		return domain.NewAppError(domain.ErrorCodeInternal, "failed to send meeting schedule to discord", err)
+	}
+
+	return nil
 }
 
 func (s *Service) ListTasks(ctx context.Context, actor domain.Actor, year, month int32) ([]domain.Task, error) {
@@ -598,7 +640,11 @@ func (s *Service) PublishAnnouncement(ctx context.Context, actor domain.Actor, i
 	}
 
 	// Send to Discord via Webhook.
-	discordMessageID, err := s.webhook.Send(ctx, before.Body)
+	fields := []discord.WebhookEmbedField{
+		{Name: "対象月", Value: fmt.Sprintf("%d年%d月", before.Year, before.Month), Inline: true},
+		{Name: "公開先", Value: input.PublishChannel, Inline: true},
+	}
+	discordMessageID, err := s.webhook.SendEmbed(ctx, "広報文を送信", before.Body, fields)
 	if err != nil {
 		s.logger.Error("discord webhook failed", "error", err, "announcement_id", input.ID)
 		// Mark as failed.

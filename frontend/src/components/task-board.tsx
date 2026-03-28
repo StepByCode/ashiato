@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { CheckCheck, ChevronDown, ExternalLink, Loader2, Plus, RotateCcw } from "lucide-react";
+import { CheckCheck, ChevronDown, ExternalLink, Loader2, Plus, RefreshCw, RotateCcw } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -112,7 +112,7 @@ export function TaskBoard() {
     type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
   const urlTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchTasks = useCallback(async (year: number, month: number, options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -186,26 +186,17 @@ export function TaskBoard() {
     void fetchMe();
   }, [fetchMe, fetchMembers]);
 
-  useEffect(() => {
-    pollTimer.current = setInterval(() => {
-      void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
-    }, 5000);
-
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
-        void fetchMembers();
-        void fetchMe();
-      }
-    };
-
-    window.addEventListener("focus", handleVisibility);
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      if (pollTimer.current) clearInterval(pollTimer.current);
-      window.removeEventListener("focus", handleVisibility);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
+  const handleManualRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true }),
+        fetchMembers(),
+        fetchMe(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
   }, [fetchMe, fetchMembers, fetchTasks, selectedPeriod.month, selectedPeriod.year]);
 
   const handleCreateTask = async (event: FormEvent) => {
@@ -342,6 +333,19 @@ export function TaskBoard() {
   return (
     <WorkflowShell activeStep="作成">
       <section className="grid gap-4">
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 rounded-full px-5 text-sm font-semibold shadow-sm"
+            onClick={handleManualRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+            {refreshing ? "更新中..." : "手動更新"}
+          </Button>
+        </div>
+
         {tasks.map((task) => {
           const isEventNameTask = task.title === "イベント名";
           const hasAssignee = Boolean(task.assigneeId);

@@ -74,6 +74,9 @@ func isSimpleAPIPath(reqPath string) bool {
 		strings.HasPrefix(reqPath, "/api/v1/publicity/") {
 		return true
 	}
+	if reqPath == "/api/v1/meeting/share" {
+		return false
+	}
 	if reqPath == "/api/v1/tasks" {
 		return true
 	}

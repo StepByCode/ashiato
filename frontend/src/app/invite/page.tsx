@@ -20,6 +20,7 @@ export default function InvitePage() {
   const [submitting, setSubmitting] = useState(false);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loadingInvites, setLoadingInvites] = useState(true);
+  const [revokingUID, setRevokingUID] = useState("");
 
   const fetchInvites = useCallback(async () => {
     try {
@@ -78,6 +79,31 @@ export default function InvitePage() {
       setError("通信エラーが発生しました");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleRevoke = async (uid: string) => {
+    setError("");
+    setRevokingUID(uid);
+    try {
+      const token = await getIdToken();
+      if (!token) {
+        setError("ログイン状態を確認できませんでした");
+        return;
+      }
+      const res = await apiFetch(`/api/v1/invite/${uid}`, token, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error?.message ?? "招待の取り消しに失敗しました");
+        return;
+      }
+      setInvites((current) => current.filter((invite) => invite.uid !== uid));
+    } catch {
+      setError("通信エラーが発生しました");
+    } finally {
+      setRevokingUID("");
     }
   };
 
@@ -163,10 +189,20 @@ export default function InvitePage() {
                   key={inv.uid}
                   className="flex items-center justify-between rounded-xl border border-border/40 px-4 py-3"
                 >
-                  <span className="text-sm">{inv.email}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {inv.createdAt ? new Date(inv.createdAt).toLocaleDateString("ja-JP") : ""}
-                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm">{inv.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {inv.createdAt ? new Date(inv.createdAt).toLocaleDateString("ja-JP") : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRevoke(inv.uid)}
+                    disabled={revokingUID === inv.uid}
+                    className="rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {revokingUID === inv.uid ? "取消中..." : "取り消す"}
+                  </button>
                 </div>
               ))}
             </div>

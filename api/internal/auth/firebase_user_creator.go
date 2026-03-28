@@ -27,3 +27,7 @@ func (a *FirebaseUserCreatorAdapter) CreateFirebaseUser(ctx context.Context, ema
 	}
 	return user.UID, nil
 }
+
+func (a *FirebaseUserCreatorAdapter) DeleteFirebaseUser(ctx context.Context, uid string) error {
+	return a.client.DeleteUser(ctx, uid)
+}

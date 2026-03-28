@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/big"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,17 +23,18 @@ import (
 
 // InviteDeps holds dependencies for invite endpoints.
 type InviteDeps struct {
-	DBClient       *db.Client
-	FirebaseAuth   FirebaseUserCreator
-	ResendAPIKey   string
-	FromEmail      string
-	Webhook        *discord.WebhookClient
-	Logger         *slog.Logger
+	DBClient     *db.Client
+	FirebaseAuth FirebaseUserCreator
+	ResendAPIKey string
+	FromEmail    string
+	Webhook      *discord.WebhookClient
+	Logger       *slog.Logger
 }
 
 // FirebaseUserCreator is implemented by auth.FirebaseUserCreatorAdapter.
 type FirebaseUserCreator interface {
 	CreateFirebaseUser(ctx context.Context, email, password, displayName string) (string, error)
+	DeleteFirebaseUser(ctx context.Context, uid string) error
 }
 
 type inviteRequest struct {
@@ -50,6 +53,7 @@ const invitesCollection = "simple_invites"
 func RegisterInviteRoutes(g *echo.Group, deps InviteDeps) {
 	g.POST("/invite", inviteHandler(deps))
 	g.GET("/invites", listInvitesHandler(deps.DBClient))
+	g.DELETE("/invite/:uid", revokeInviteHandler(deps))
 }
 
 func inviteHandler(deps InviteDeps) echo.HandlerFunc {
@@ -105,11 +109,19 @@ func inviteHandler(deps InviteDeps) echo.HandlerFunc {
 		}
 		_ = deps.DBClient.NewRef(profilesCollection).Child(uid).Set(ctx, profile)
 
-		// Send invite email via Resend HTTP API
-		if deps.ResendAPIKey != "" {
-			go func() {
-				sendInviteEmail(deps.ResendAPIKey, deps.FromEmail, email, password, deps.Logger)
-			}()
+		if deps.ResendAPIKey == "" {
+			rollbackInvite(ctx, deps, uid)
+			return c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error: ErrorBody{Code: "RESEND_NOT_CONFIGURED", Message: "招待メール送信の設定が不足しています"},
+			})
+		}
+
+		if err := sendInviteEmail(ctx, deps.ResendAPIKey, deps.FromEmail, email, password); err != nil {
+			deps.Logger.Error("failed to send invite email", slog.Any("error", err), slog.String("email", email))
+			rollbackInvite(ctx, deps, uid)
+			return c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error: ErrorBody{Code: "INVITE_EMAIL_FAILED", Message: "招待メールの送信に失敗しました: " + err.Error()},
+			})
 		}
 
 		// Notify Discord
@@ -150,11 +162,87 @@ func listInvitesHandler(client *db.Client) echo.HandlerFunc {
 		for _, v := range all {
 			invites = append(invites, v)
 		}
+		sort.Slice(invites, func(i, j int) bool {
+			left, _ := invites[i]["createdAt"].(string)
+			right, _ := invites[j]["createdAt"].(string)
+			return left > right
+		})
 		return c.JSON(http.StatusOK, map[string]interface{}{"invites": invites})
 	}
 }
 
-func sendInviteEmail(apiKey, fromEmail, toEmail, password string, logger *slog.Logger) {
+func revokeInviteHandler(deps InviteDeps) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if _, ok := appctx.ActorFromContext(c.Request().Context()); !ok {
+			return c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error: ErrorBody{Code: "UNAUTHORIZED", Message: "sign-in is required"},
+			})
+		}
+
+		uid := strings.TrimSpace(c.Param("uid"))
+		if uid == "" {
+			return validationError(c, "uid", "is required")
+		}
+
+		ctx := c.Request().Context()
+		var invite map[string]interface{}
+		if err := deps.DBClient.NewRef(invitesCollection).Child(uid).Get(ctx, &invite); err != nil || len(invite) == 0 {
+			return notFoundError(c, "invite not found")
+		}
+
+		if err := rollbackInvite(ctx, deps, uid); err != nil {
+			deps.Logger.Error("failed to revoke invite", slog.Any("error", err), slog.String("uid", uid))
+			return internalErrorWithLog(c, "invite revoke failed", err, "uid", uid)
+		}
+
+		return c.JSON(http.StatusOK, map[string]string{"status": "revoked"})
+	}
+}
+
+func rollbackInvite(ctx context.Context, deps InviteDeps, uid string) error {
+	var firstErr error
+	if err := deps.FirebaseAuth.DeleteFirebaseUser(ctx, uid); err != nil && !strings.Contains(strings.ToLower(err.Error()), "no user record") {
+		firstErr = err
+	}
+
+	if err := deps.DBClient.NewRef(invitesCollection).Child(uid).Delete(ctx); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	if err := deps.DBClient.NewRef(profilesCollection).Child(uid).Delete(ctx); err != nil && firstErr == nil {
+		firstErr = err
+	}
+
+	var users map[string]map[string]interface{}
+	if err := deps.DBClient.NewRef("users").Get(ctx, &users); err == nil {
+		for userID, user := range users {
+			firebaseUID, _ := user["firebase_uid"].(string)
+			if firebaseUID != uid {
+				continue
+			}
+			if err := deps.DBClient.NewRef("users").Child(userID).Delete(ctx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+
+			var members map[string]map[string]interface{}
+			if err := deps.DBClient.NewRef("organization_members").Get(ctx, &members); err == nil {
+				for memberID, member := range members {
+					memberUserID, _ := member["user_id"].(string)
+					if memberUserID != userID {
+						continue
+					}
+					if err := deps.DBClient.NewRef("organization_members").Child(memberID).Delete(ctx); err != nil && firstErr == nil {
+						firstErr = err
+					}
+				}
+			}
+			break
+		}
+	}
+
+	return firstErr
+}
+
+func sendInviteEmail(ctx context.Context, apiKey, fromEmail, toEmail, password string) error {
 	htmlBody := fmt.Sprintf(`
 <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 2rem;">
   <h2 style="color: #df6900;">Backstage へようこそ</h2>
@@ -166,19 +254,20 @@ func sendInviteEmail(apiKey, fromEmail, toEmail, password string, logger *slog.L
   </div>
   <p style="color: #666; font-size: 0.875rem;">初回ログイン後、プロフィールの登録をお願いします。</p>
 </div>`, toEmail, password)
+	textBody := fmt.Sprintf("Backstage に招待されました。\n\nメールアドレス: %s\n初回パスワード: %s\n\n初回ログイン後、プロフィールの登録をお願いします。", toEmail, password)
 
 	payload := map[string]interface{}{
 		"from":    fromEmail,
 		"to":      []string{toEmail},
 		"subject": "【Backstage】招待のお知らせ",
 		"html":    htmlBody,
+		"text":    textBody,
 	}
 	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
 	if err != nil {
-		logger.Error("failed to create resend request", slog.Any("error", err))
-		return
+		return fmt.Errorf("create resend request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -186,16 +275,15 @@ func sendInviteEmail(apiKey, fromEmail, toEmail, password string, logger *slog.L
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Error("failed to send resend email", slog.Any("error", err), slog.String("email", toEmail))
-		return
+		return fmt.Errorf("send resend email: %w", err)
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		logger.Error("resend returned error", slog.Int("status", resp.StatusCode), slog.String("email", toEmail))
-		return
+		return fmt.Errorf("resend returned %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 	}
-	logger.Info("invite email sent", slog.String("email", toEmail))
+	return nil
 }
 
 func generatePassword(length int) (string, error) {

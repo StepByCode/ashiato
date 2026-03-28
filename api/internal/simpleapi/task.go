@@ -71,16 +71,25 @@ func lookupMemberName(ctx context.Context, client *db.Client, assigneeID string)
 		return ""
 	}
 	var user struct {
+		FirebaseUID string `json:"firebase_uid"`
 		Name  string `json:"name"`
 		Email string `json:"email"`
 	}
 	if err := client.NewRef("users").Child(assigneeID).Get(ctx, &user); err != nil {
 		return ""
 	}
+	if user.FirebaseUID != "" {
+		var profile struct {
+			Name string `json:"name"`
+		}
+		if err := client.NewRef(profilesCollection).Child(user.FirebaseUID).Get(ctx, &profile); err == nil && strings.TrimSpace(profile.Name) != "" {
+			return strings.TrimSpace(profile.Name)
+		}
+	}
 	if user.Name != "" {
 		return user.Name
 	}
-	return user.Email
+	return ""
 }
 
 func ensureRequiredTasks(ctx context.Context, client *db.Client, year, month int) error {

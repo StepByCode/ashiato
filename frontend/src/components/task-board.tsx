@@ -348,7 +348,7 @@ export function TaskBoard() {
           const isAssigneeSelf = Boolean(currentMemberId) && currentMemberId === task.assigneeId;
           const showApprove =
             !isEventNameTask && hasAssignee && !isAssigneeSelf && (task.state === "done" || task.state === "approved");
-          const showDoneAction = !isEventNameTask && hasAssignee && !showApprove;
+          const showDoneAction = !isEventNameTask && hasAssignee && isAssigneeSelf;
           const isApproved = task.state === "approved";
           const isDoneLike = task.state !== "in_progress";
           const isApproveConfirmOpen =
@@ -356,7 +356,7 @@ export function TaskBoard() {
           const isDoneConfirmOpen =
             pendingAction?.taskId === task.id &&
             (pendingAction.type === "mark_done" || pendingAction.type === "mark_in_progress");
-          const taskStateMeta = stateMeta[task.state];
+          const taskStateMeta = isEventNameTask ? stateMeta.in_progress : stateMeta[task.state];
           const jumpHref = toJumpHref(task.url);
           const pendingCopy =
             pendingAction?.type === "approve"
@@ -416,7 +416,7 @@ export function TaskBoard() {
                           }}
                         >
                           <CheckCheck className="size-4" />
-                        Approve
+                          Approve
                         </Button>
 
                         {isApproveConfirmOpen ? (
@@ -489,9 +489,11 @@ export function TaskBoard() {
                         ) : null}
                       </>
                     ) : (
-                      <div className="flex min-h-12 w-full items-center justify-center rounded-full border border-border/70 px-5 text-sm font-semibold text-muted-foreground">
-                        {isEventNameTask ? "担当者不要" : hasAssignee ? "担当者が承認します" : "担当者を設定してください"}
-                      </div>
+                      !isEventNameTask ? (
+                        <div className="flex min-h-12 w-full items-center justify-center rounded-full border border-border/70 px-5 text-sm font-semibold text-muted-foreground">
+                          {hasAssignee ? "担当者が対応中です" : "担当者を設定してください"}
+                        </div>
+                      ) : null
                     )}
                   </div>
                 </div>
@@ -499,23 +501,23 @@ export function TaskBoard() {
                 {fixedTask ? (
                   <p className="text-xs text-muted-foreground">
                     固定タスク
-                    {fixedTask.assigneeRequired ? " / 担当者必須" : " / 担当者任意"}
+                    {fixedTask.assigneeRequired ? " / 担当者必須" : ""}
                   </p>
                 ) : null}
 
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                <div className={cn("grid gap-3 lg:items-end", isEventNameTask ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(0,1fr)_auto]")}>
                   <div>
                     <Input
                       id={`${task.id}-url`}
                       className="h-12 rounded-2xl border-border/70 bg-background/85 px-4 text-[color:var(--url-color)] shadow-sm placeholder:text-[color:var(--url-color)] placeholder:opacity-60"
-                      type="url"
-                      placeholder="URL"
+                      type={isEventNameTask ? "text" : "url"}
+                      placeholder={isEventNameTask ? "イベント名" : "URL"}
                       value={task.url}
                       onChange={(e) => updateUrl(task.id, e.target.value)}
                     />
                   </div>
 
-                  {jumpHref ? (
+                  {!isEventNameTask && jumpHref ? (
                     <a
                       className={cn(
                         buttonVariants({ variant: "outline" }),
@@ -528,11 +530,11 @@ export function TaskBoard() {
                       URL
                       <ExternalLink className="size-4" />
                     </a>
-                  ) : (
+                  ) : !isEventNameTask ? (
                     <div className="flex min-h-12 items-center justify-center rounded-2xl border border-dashed border-border/70 px-5 text-sm font-medium text-muted-foreground">
                       URL
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </CardContent>
             </Card>

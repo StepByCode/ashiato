@@ -77,7 +77,15 @@ export function MeetingBoard() {
     return defaultDate ? new Date(defaultDate.getFullYear(), defaultDate.getMonth(), 1) : new Date();
   });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializedRef = useRef(false);
+  const [showSaveNotice, setShowSaveNotice] = useState(false);
+
+  const flashSaveNotice = useCallback(() => {
+    setShowSaveNotice(true);
+    if (saveNoticeTimer.current) clearTimeout(saveNoticeTimer.current);
+    saveNoticeTimer.current = setTimeout(() => setShowSaveNotice(false), 3000);
+  }, []);
 
   const saveMeeting = useCallback((nextMeetingAt: string, nextMeetUrl: string, year: number, month: number) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -88,12 +96,15 @@ export function MeetingBoard() {
         body.meetingAt = meetingDate.toISOString();
       }
       body.meetUrl = nextMeetUrl;
-      await apiFetch("/api/v1/meeting", null, {
+      const res = await apiFetch("/api/v1/meeting", null, {
         method: "PATCH",
         body: JSON.stringify(body),
       });
+      if (res.ok) {
+        flashSaveNotice();
+      }
     }, 600);
-  }, []);
+  }, [flashSaveNotice]);
 
   useEffect(() => {
     initializedRef.current = false;
@@ -283,6 +294,11 @@ export function MeetingBoard() {
   return (
     <WorkflowShell activeStep="定例">
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.85fr)]">
+        {showSaveNotice ? (
+          <div className="fixed bottom-5 right-5 z-50 rounded-full border border-emerald-300/60 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 shadow-lg">
+            保存しました
+          </div>
+        ) : null}
         <Card className="rounded-[1.75rem] border-border/70 bg-card/95 shadow-sm">
           <CardContent className="space-y-6 p-5 sm:p-6">
             <div className="space-y-2">

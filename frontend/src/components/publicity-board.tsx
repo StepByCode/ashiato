@@ -70,6 +70,14 @@ export function PublicityBoard() {
   const [creationDone, setCreationDone] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ channelId: ChannelId; targetState: ChannelState } | null>(null);
   const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showSaveNotice, setShowSaveNotice] = useState(false);
+
+  const flashSaveNotice = useCallback(() => {
+    setShowSaveNotice(true);
+    if (saveNoticeTimer.current) clearTimeout(saveNoticeTimer.current);
+    saveNoticeTimer.current = setTimeout(() => setShowSaveNotice(false), 3000);
+  }, []);
 
   const fetchData = useCallback(async (year: number, month: number) => {
     setLoading(true);
@@ -137,17 +145,20 @@ export function PublicityBoard() {
   const publicityDone = channels.length > 0 && channels.every((channel) => channel.state === "done");
   const isWorkflowComplete = !loading && publicityDone && creationDone;
 
-  const handleTemplateChange = (text: string) => {
+  const handleTemplateChange = useCallback((text: string) => {
     setTemplate(text);
     if (templateTimer.current) clearTimeout(templateTimer.current);
     templateTimer.current = setTimeout(async () => {
       const token = await getIdToken();
-      await apiFetch("/api/v1/publicity/template", token, {
+      const res = await apiFetch("/api/v1/publicity/template", token, {
         method: "PATCH",
         body: JSON.stringify({ text, year: selectedPeriod.year, month: selectedPeriod.month }),
       });
+      if (res.ok) {
+        flashSaveNotice();
+      }
     }, 600);
-  };
+  }, [flashSaveNotice, getIdToken, selectedPeriod.month, selectedPeriod.year]);
 
   const updateChannelState = async (id: ChannelId, state: ChannelState) => {
     setChannels((currentChannels) =>
@@ -181,6 +192,11 @@ export function PublicityBoard() {
   return (
     <WorkflowShell activeStep="広報" isWorkflowComplete={isWorkflowComplete}>
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.9fr)]">
+        {showSaveNotice ? (
+          <div className="fixed bottom-5 right-5 z-50 rounded-full border border-emerald-300/60 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 shadow-lg">
+            保存しました
+          </div>
+        ) : null}
         <Card className="rounded-[1.75rem] border-border/70 bg-card/95 shadow-sm">
           <CardContent className="space-y-6 p-5 sm:p-6">
             <div className="space-y-2">

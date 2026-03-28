@@ -111,7 +111,15 @@ export function TaskBoard() {
     type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
   const urlTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const saveNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showSaveNotice, setShowSaveNotice] = useState(false);
+
+  const flashSaveNotice = useCallback(() => {
+    setShowSaveNotice(true);
+    if (saveNoticeTimer.current) clearTimeout(saveNoticeTimer.current);
+    saveNoticeTimer.current = setTimeout(() => setShowSaveNotice(false), 3000);
+  }, []);
 
   const fetchTasks = useCallback(async (year: number, month: number, options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -274,7 +282,7 @@ export function TaskBoard() {
     }
   };
 
-  const updateUrl = (id: string, url: string) => {
+  const updateUrl = useCallback((id: string, url: string) => {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url } : task)));
     if (urlTimers.current[id]) clearTimeout(urlTimers.current[id]);
     urlTimers.current[id] = setTimeout(async () => {
@@ -287,9 +295,10 @@ export function TaskBoard() {
         const data = await res.json();
         const t = data.task;
         setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url: t.url ?? "" } : task)));
+        flashSaveNotice();
       }
     }, 600);
-  };
+  }, [flashSaveNotice, getIdToken]);
 
   const changeTaskState = async (id: string, state: TaskState) => {
     try {
@@ -338,6 +347,11 @@ export function TaskBoard() {
   return (
     <WorkflowShell activeStep="作成">
       <section className="grid gap-4">
+        {showSaveNotice ? (
+          <div className="fixed bottom-5 right-5 z-50 rounded-full border border-emerald-300/60 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 shadow-lg">
+            保存しました
+          </div>
+        ) : null}
         <div className="flex justify-end">
           <Button
             type="button"

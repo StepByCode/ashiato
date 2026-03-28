@@ -47,12 +47,21 @@ type inviteResponse struct {
 	Password string `json:"password"`
 }
 
+type inviteStatusResponse struct {
+	UID                string `json:"uid"`
+	Email              string `json:"email"`
+	PasswordChangedAt  string `json:"passwordChangedAt,omitempty"`
+	NeedsPasswordReset bool   `json:"needsPasswordReset"`
+}
+
 const invitesCollection = "simple_invites"
 
 // RegisterInviteRoutes registers the invite endpoint.
 func RegisterInviteRoutes(g *echo.Group, deps InviteDeps) {
 	g.POST("/invite", inviteHandler(deps))
 	g.GET("/invites", listInvitesHandler(deps.DBClient))
+	g.GET("/invite/:uid/status", inviteStatusHandler(deps.DBClient))
+	g.PATCH("/invite/:uid/password-changed", markInvitePasswordChangedHandler(deps.DBClient))
 	g.DELETE("/invite/:uid", revokeInviteHandler(deps))
 }
 
@@ -95,9 +104,10 @@ func inviteHandler(deps InviteDeps) echo.HandlerFunc {
 		// Store invite record
 		now := time.Now().Format(time.RFC3339)
 		record := map[string]interface{}{
-			"uid":       uid,
-			"email":     email,
-			"createdAt": now,
+			"uid":               uid,
+			"email":             email,
+			"createdAt":         now,
+			"passwordChangedAt": "",
 		}
 		_ = deps.DBClient.NewRef(invitesCollection).Child(uid).Set(ctx, record)
 
@@ -168,6 +178,53 @@ func listInvitesHandler(client *db.Client) echo.HandlerFunc {
 			return left > right
 		})
 		return c.JSON(http.StatusOK, map[string]interface{}{"invites": invites})
+	}
+}
+
+func inviteStatusHandler(client *db.Client) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		uid := strings.TrimSpace(c.Param("uid"))
+		actor, ok := appctx.ActorFromContext(c.Request().Context())
+		if !ok || actor.Subject != uid {
+			return c.JSON(http.StatusForbidden, ErrorResponse{
+				Error: ErrorBody{Code: "FORBIDDEN", Message: "invite status access is limited to the signed-in user"},
+			})
+		}
+
+		var invite inviteStatusResponse
+		if err := client.NewRef(invitesCollection).Child(uid).Get(c.Request().Context(), &invite); err != nil || invite.UID == "" {
+			return c.JSON(http.StatusOK, inviteStatusResponse{
+				UID:                uid,
+				NeedsPasswordReset: false,
+			})
+		}
+		invite.NeedsPasswordReset = strings.TrimSpace(invite.PasswordChangedAt) == ""
+		return c.JSON(http.StatusOK, invite)
+	}
+}
+
+func markInvitePasswordChangedHandler(client *db.Client) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		uid := strings.TrimSpace(c.Param("uid"))
+		actor, ok := appctx.ActorFromContext(c.Request().Context())
+		if !ok || actor.Subject != uid {
+			return c.JSON(http.StatusForbidden, ErrorResponse{
+				Error: ErrorBody{Code: "FORBIDDEN", Message: "password change update is limited to the signed-in user"},
+			})
+		}
+
+		now := time.Now().Format(time.RFC3339)
+		ref := client.NewRef(invitesCollection).Child(uid)
+		var invite map[string]interface{}
+		if err := ref.Get(c.Request().Context(), &invite); err != nil || len(invite) == 0 {
+			return c.JSON(http.StatusOK, map[string]string{"status": "no_invite"})
+		}
+		if err := ref.Update(c.Request().Context(), map[string]interface{}{
+			"passwordChangedAt": now,
+		}); err != nil {
+			return internalError(c)
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok", "passwordChangedAt": now})
 	}
 }
 

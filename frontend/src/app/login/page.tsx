@@ -24,6 +24,27 @@ export default function LoginPage() {
 
   if (loading || user) return null;
 
+  const resolvePostLoginRoute = async (uid: string, token: string) => {
+    const inviteStatusRes = await apiFetch(`/api/v1/invite/${uid}/status`, token);
+    if (inviteStatusRes.ok) {
+      const inviteStatus = await inviteStatusRes.json();
+      if (inviteStatus?.needsPasswordReset) {
+        return "/initial-password";
+      }
+    }
+
+    const profileRes = await apiFetch(`/api/v1/profile/${uid}`, token);
+    if (!profileRes.ok) {
+      return "/profile-setup";
+    }
+
+    const profile = await profileRes.json();
+    if (!profile.name) {
+      return "/profile-setup";
+    }
+    return "/";
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -39,20 +60,10 @@ export default function LoginPage() {
       const credential = await signInWithEmailAndPassword(auth, email, password);
       const token = await credential.user.getIdToken();
 
-      // Check if profile exists, redirect to setup if not
       try {
         const uid = credential.user.uid;
-        const res = await apiFetch(`/api/v1/profile/${uid}`, token);
-        if (res.ok) {
-          const profile = await res.json();
-          if (!profile.name) {
-            router.replace("/profile-setup");
-            return;
-          }
-        } else {
-          router.replace("/profile-setup");
-          return;
-        }
+        router.replace(await resolvePostLoginRoute(uid, token));
+        return;
       } catch {
         // API unreachable, go to home
       }

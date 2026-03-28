@@ -68,30 +68,10 @@ func taskAllowsEmptyAssignee(title string) bool {
 	return false
 }
 
-func lookupMemberName(ctx context.Context, client *db.Client, assigneeID string) string {
-	if assigneeID == "" {
-		return ""
-	}
-	var user struct {
-		FirebaseUID string `json:"firebase_uid"`
-		Name        string `json:"name"`
-		Email       string `json:"email"`
-	}
-	if err := client.NewRef("users").Child(assigneeID).Get(ctx, &user); err != nil {
-		return ""
-	}
-	if user.FirebaseUID != "" {
-		var profile struct {
-			Name string `json:"name"`
-		}
-		if err := client.NewRef(profilesCollection).Child(user.FirebaseUID).Get(ctx, &profile); err == nil && strings.TrimSpace(profile.Name) != "" {
-			return strings.TrimSpace(profile.Name)
-		}
-	}
-	if user.Name != "" {
-		return user.Name
-	}
-	return ""
+type taskUserDoc struct {
+	FirebaseUID string `json:"firebase_uid"`
+	Name        string `json:"name"`
+	Email       string `json:"email"`
 }
 
 func lookupProfileName(ctx context.Context, client *db.Client, firebaseUID string) string {
@@ -157,12 +137,15 @@ func notifyTaskApproved(ctx context.Context, webhook *discord.WebhookClient, act
 	return err
 }
 
-func ensureRequiredTasks(ctx context.Context, client *db.Client, year, month int) error {
+func ensureRequiredTasks(ctx context.Context, client *db.Client, year, month int) (map[string]TaskResponse, error) {
 	collection := tasksCollectionForPeriod(year, month)
 	ref := client.NewRef(collection)
 	var all map[string]TaskResponse
 	if err := ref.Get(ctx, &all); err != nil && !strings.Contains(err.Error(), "unexpected end of JSON input") {
-		return err
+		return nil, err
+	}
+	if all == nil {
+		all = map[string]TaskResponse{}
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -183,10 +166,57 @@ func ensureRequiredTasks(ctx context.Context, client *db.Client, year, month int
 			UpdatedAt: now,
 		}
 		if err := ref.Child(id).Set(ctx, task); err != nil {
-			return err
+			return nil, err
+		}
+		all[id] = task
+	}
+	return all, nil
+}
+
+func resolveAssigneeNames(ctx context.Context, client *db.Client, tasks []TaskResponse) {
+	needed := map[string]struct{}{}
+	for _, task := range tasks {
+		if task.AssigneeID != "" {
+			needed[task.AssigneeID] = struct{}{}
 		}
 	}
-	return nil
+	if len(needed) == 0 {
+		return
+	}
+
+	var users map[string]taskUserDoc
+	if err := client.NewRef("users").Get(ctx, &users); err != nil || len(users) == 0 {
+		return
+	}
+
+	var profiles map[string]struct {
+		Name string `json:"name"`
+	}
+	_ = client.NewRef(profilesCollection).Get(ctx, &profiles)
+
+	names := map[string]string{}
+	for userID := range needed {
+		user, ok := users[userID]
+		if !ok {
+			continue
+		}
+		if user.FirebaseUID != "" {
+			if profile, ok := profiles[user.FirebaseUID]; ok && strings.TrimSpace(profile.Name) != "" {
+				names[userID] = strings.TrimSpace(profile.Name)
+				continue
+			}
+		}
+		if strings.TrimSpace(user.Name) != "" {
+			names[userID] = strings.TrimSpace(user.Name)
+		}
+	}
+
+	for index := range tasks {
+		if tasks[index].AssigneeID == "" {
+			continue
+		}
+		tasks[index].AssigneeName = names[tasks[index].AssigneeID]
+	}
 }
 
 // RegisterTaskRoutes registers Task API endpoints on the given Echo group.
@@ -204,28 +234,33 @@ func getTasksHandler(client *db.Client) echo.HandlerFunc {
 		year, month := parsePeriodParams(c)
 		collection := tasksCollectionForPeriod(year, month)
 
+		var all map[string]TaskResponse
 		if year != 0 && month != 0 {
-			if err := ensureRequiredTasks(ctx, client, year, month); err != nil {
+			var err error
+			all, err = ensureRequiredTasks(ctx, client, year, month)
+			if err != nil {
 				return internalErrorWithLog(c, "failed to ensure required tasks", err, "collection", collection, "year", year, "month", month)
 			}
 		}
 
-		ref := client.NewRef(collection)
-		var all map[string]TaskResponse
-		if err := ref.Get(ctx, &all); err != nil || len(all) == 0 {
-			if err != nil {
-				slog.WarnContext(ctx, "task list fetch failed; returning empty list", "trace_id", appctx.TraceIDFromContext(ctx), "collection", collection, "year", year, "month", month, "error", err)
+		if all == nil {
+			ref := client.NewRef(collection)
+			if err := ref.Get(ctx, &all); err != nil || len(all) == 0 {
+				if err != nil {
+					slog.WarnContext(ctx, "task list fetch failed; returning empty list", "trace_id", appctx.TraceIDFromContext(ctx), "collection", collection, "year", year, "month", month, "error", err)
+				}
+				return c.JSON(http.StatusOK, map[string]interface{}{"tasks": []TaskResponse{}})
 			}
+		}
+		if len(all) == 0 {
 			return c.JSON(http.StatusOK, map[string]interface{}{"tasks": []TaskResponse{}})
 		}
 
 		tasks := make([]TaskResponse, 0, len(all))
 		for _, t := range all {
-			if t.AssigneeID != "" {
-				t.AssigneeName = lookupMemberName(ctx, client, t.AssigneeID)
-			}
 			tasks = append(tasks, t)
 		}
+		resolveAssigneeNames(ctx, client, tasks)
 		sort.Slice(tasks, func(i, j int) bool {
 			leftRequired := strings.HasPrefix(tasks[i].ID, "required-")
 			rightRequired := strings.HasPrefix(tasks[j].ID, "required-")
@@ -265,21 +300,23 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 		id := "task-" + uuid.New().String()[:8]
 		now := time.Now().Format(time.RFC3339)
 		task := TaskResponse{
-			ID:           id,
-			Title:        title,
-			AssigneeID:   req.AssigneeID,
-			AssigneeName: lookupMemberName(c.Request().Context(), client, req.AssigneeID),
-			State:        "in_progress",
-			URL:          "",
-			Year:         req.Year,
-			Month:        req.Month,
-			CreatedAt:    now,
-			UpdatedAt:    now,
+			ID:         id,
+			Title:      title,
+			AssigneeID: req.AssigneeID,
+			State:      "in_progress",
+			URL:        "",
+			Year:       req.Year,
+			Month:      req.Month,
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		}
 
 		if err := client.NewRef(collection).Child(id).Set(c.Request().Context(), task); err != nil {
 			return internalErrorWithLog(c, "task create failed", err, "collection", collection, "task_id", id, "year", req.Year, "month", req.Month)
 		}
+		single := []TaskResponse{task}
+		resolveAssigneeNames(c.Request().Context(), client, single)
+		task = single[0]
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{"task": task})
 	}
@@ -426,7 +463,7 @@ func updateTaskAssignee(c echo.Context, client *db.Client, taskID, assigneeID st
 
 	updates := map[string]interface{}{
 		"assigneeId":   assigneeID,
-		"assigneeName": lookupMemberName(ctx, client, assigneeID),
+		"assigneeName": "",
 		"updatedAt":    now,
 	}
 	if err := ref.Update(ctx, updates); err != nil {
@@ -437,6 +474,9 @@ func updateTaskAssignee(c echo.Context, client *db.Client, taskID, assigneeID st
 	if err := ref.Get(ctx, &updated); err != nil {
 		return internalErrorWithLog(c, "task fetch after assignee update failed", err, "task_id", taskID)
 	}
+	single := []TaskResponse{updated}
+	resolveAssigneeNames(ctx, client, single)
+	updated = single[0]
 
 	return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})
 }

@@ -200,7 +200,8 @@ export function TaskBoard() {
     if (!newTitle.trim() || !newAssigneeId) return;
 
     try {
-      const res = await apiFetch("/api/v1/tasks", null, {
+      const token = await getIdToken();
+      const res = await apiFetch("/api/v1/tasks", token, {
         method: "POST",
         body: JSON.stringify({
           title: newTitle.trim(),
@@ -243,7 +244,8 @@ export function TaskBoard() {
       )
     );
     try {
-      const res = await apiFetch(`/api/v1/tasks/${id}/assignee`, null, {
+      const token = await getIdToken();
+      const res = await apiFetch(`/api/v1/tasks/${id}/assignee`, token, {
         method: "PATCH",
         body: JSON.stringify({ assigneeId }),
       });
@@ -271,7 +273,8 @@ export function TaskBoard() {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url } : task)));
     if (urlTimers.current[id]) clearTimeout(urlTimers.current[id]);
     urlTimers.current[id] = setTimeout(async () => {
-      const res = await apiFetch(`/api/v1/tasks/${id}/url`, null, {
+      const token = await getIdToken();
+      const res = await apiFetch(`/api/v1/tasks/${id}/url`, token, {
         method: "PATCH",
         body: JSON.stringify({ url }),
       });
@@ -285,7 +288,8 @@ export function TaskBoard() {
 
   const changeTaskState = async (id: string, state: TaskState) => {
     try {
-      const res = await apiFetch(`/api/v1/tasks/${id}/state`, null, {
+      const token = await getIdToken();
+      const res = await apiFetch(`/api/v1/tasks/${id}/state`, token, {
         method: "PATCH",
         body: JSON.stringify({ state }),
       });

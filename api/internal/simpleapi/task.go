@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"github.com/dokkiitech/ashiato/api/internal/discord"
+	"github.com/dokkiitech/ashiato/api/internal/domain"
 	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
 
@@ -72,8 +74,8 @@ func lookupMemberName(ctx context.Context, client *db.Client, assigneeID string)
 	}
 	var user struct {
 		FirebaseUID string `json:"firebase_uid"`
-		Name  string `json:"name"`
-		Email string `json:"email"`
+		Name        string `json:"name"`
+		Email       string `json:"email"`
 	}
 	if err := client.NewRef("users").Child(assigneeID).Get(ctx, &user); err != nil {
 		return ""
@@ -90,6 +92,49 @@ func lookupMemberName(ctx context.Context, client *db.Client, assigneeID string)
 		return user.Name
 	}
 	return ""
+}
+
+func lookupProfileName(ctx context.Context, client *db.Client, firebaseUID string) string {
+	if firebaseUID == "" {
+		return ""
+	}
+	var profile struct {
+		Name string `json:"name"`
+	}
+	if err := client.NewRef(profilesCollection).Child(firebaseUID).Get(ctx, &profile); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(profile.Name)
+}
+
+func actorDisplayName(ctx context.Context, client *db.Client, actor domain.Actor) string {
+	if name := lookupProfileName(ctx, client, actor.Subject); name != "" {
+		return name
+	}
+	if strings.TrimSpace(actor.Name) != "" && !strings.EqualFold(strings.TrimSpace(actor.Name), strings.TrimSpace(actor.Email)) {
+		return strings.TrimSpace(actor.Name)
+	}
+	return strings.TrimSpace(actor.Email)
+}
+
+func notifyTaskDone(ctx context.Context, webhook *discord.WebhookClient, actorName string, task TaskResponse) error {
+	if webhook == nil {
+		return nil
+	}
+	fields := []discord.WebhookEmbedField{
+		{Name: "タスク", Value: task.Title, Inline: false},
+		{Name: "実行者", Value: actorName, Inline: true},
+	}
+	if task.Year != 0 && task.Month != 0 {
+		fields = append(fields, discord.WebhookEmbedField{
+			Name: "対象月", Value: fmt.Sprintf("%d年%d月", task.Year, task.Month), Inline: true,
+		})
+	}
+	fields = append(fields, discord.WebhookEmbedField{
+		Name: "次の対応", Value: "確認の後、Approveをしてください。", Inline: false,
+	})
+	_, err := webhook.SendEmbed(ctx, "作成タスクが Done になりました", fmt.Sprintf("%sさんが%sをDoneにしました。", actorName, task.Title), fields)
+	return err
 }
 
 func ensureRequiredTasks(ctx context.Context, client *db.Client, year, month int) error {
@@ -125,12 +170,12 @@ func ensureRequiredTasks(ctx context.Context, client *db.Client, year, month int
 }
 
 // RegisterTaskRoutes registers Task API endpoints on the given Echo group.
-func RegisterTaskRoutes(g *echo.Group, client *db.Client) {
+func RegisterTaskRoutes(g *echo.Group, client *db.Client, webhook *discord.WebhookClient) {
 	g.GET("/tasks", getTasksHandler(client))
 	g.POST("/tasks", createTaskHandler(client))
 	g.PATCH("/tasks/:taskId/assignee", patchTaskAssigneeHandler(client))
 	g.PATCH("/tasks/:taskId/url", patchTaskURLHandler(client))
-	g.PATCH("/tasks/:taskId/state", patchTaskStateHandler(client))
+	g.PATCH("/tasks/:taskId/state", patchTaskStateHandler(client, webhook))
 }
 
 func getTasksHandler(client *db.Client) echo.HandlerFunc {
@@ -258,7 +303,7 @@ func patchTaskURLHandler(client *db.Client) echo.HandlerFunc {
 	}
 }
 
-func patchTaskStateHandler(client *db.Client) echo.HandlerFunc {
+func patchTaskStateHandler(client *db.Client, webhook *discord.WebhookClient) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
 	}
@@ -273,6 +318,12 @@ func patchTaskStateHandler(client *db.Client) echo.HandlerFunc {
 		}
 
 		ctx := c.Request().Context()
+		actor, ok := appctx.ActorFromContext(ctx)
+		if !ok {
+			return c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error: ErrorBody{Code: "UNAUTHORIZED", Message: "sign-in is required"},
+			})
+		}
 
 		// Search for the task across all collections (current and period-specific).
 		task, ref := findTask(ctx, client, taskID)
@@ -303,6 +354,11 @@ func patchTaskStateHandler(client *db.Client) echo.HandlerFunc {
 		var updated TaskResponse
 		if err := ref.Get(ctx, &updated); err != nil {
 			return internalErrorWithLog(c, "task fetch after state update failed", err, "task_id", taskID)
+		}
+		if task.State != "done" && req.State == "done" {
+			if err := notifyTaskDone(ctx, webhook, actorDisplayName(ctx, client, actor), updated); err != nil {
+				return internalErrorWithLog(c, "task done notification failed", err, "task_id", taskID)
+			}
 		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})
 	}

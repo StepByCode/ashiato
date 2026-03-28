@@ -6,6 +6,7 @@ import { CheckCheck, Loader2, Megaphone, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import { usePeriod } from "@/lib/period-context";
@@ -61,6 +62,7 @@ const channelStateMeta: Record<
 };
 
 export function PublicityBoard() {
+  const { getIdToken } = useAuth();
   const { selectedPeriod } = usePeriod();
   const [template, setTemplate] = useState("");
   const [channels, setChannels] = useState<ChannelCard[]>([]);
@@ -139,7 +141,8 @@ export function PublicityBoard() {
     setTemplate(text);
     if (templateTimer.current) clearTimeout(templateTimer.current);
     templateTimer.current = setTimeout(async () => {
-      await apiFetch("/api/v1/publicity/template", null, {
+      const token = await getIdToken();
+      await apiFetch("/api/v1/publicity/template", token, {
         method: "PATCH",
         body: JSON.stringify({ text, year: selectedPeriod.year, month: selectedPeriod.month }),
       });
@@ -154,7 +157,8 @@ export function PublicityBoard() {
     );
     setPendingAction(null);
     try {
-      await apiFetch(`/api/v1/publicity/channels/${id}/state`, null, {
+      const token = await getIdToken();
+      await apiFetch(`/api/v1/publicity/channels/${id}/state`, token, {
         method: "PATCH",
         body: JSON.stringify({ state, year: selectedPeriod.year, month: selectedPeriod.month }),
       });

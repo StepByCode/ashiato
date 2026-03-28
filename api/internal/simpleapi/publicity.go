@@ -8,6 +8,9 @@ import (
 
 	"firebase.google.com/go/v4/db"
 	"github.com/labstack/echo/v4"
+
+	"github.com/dokkiitech/ashiato/api/internal/discord"
+	appctx "github.com/dokkiitech/ashiato/api/internal/middleware"
 )
 
 // TemplateResponse matches the spec in docs/backend-api-request.md §4.3.
@@ -45,11 +48,11 @@ func channelsCollectionForPeriod(year, month int) string {
 }
 
 // RegisterPublicityRoutes registers Publicity API endpoints.
-func RegisterPublicityRoutes(g *echo.Group, client *db.Client) {
+func RegisterPublicityRoutes(g *echo.Group, client *db.Client, webhook *discord.WebhookClient) {
 	g.GET("/publicity/template", getTemplateHandler(client))
 	g.PATCH("/publicity/template", patchTemplateHandler(client))
 	g.GET("/publicity/channels", getChannelsHandler(client))
-	g.PATCH("/publicity/channels/:channelId/state", patchChannelStateHandler(client))
+	g.PATCH("/publicity/channels/:channelId/state", patchChannelStateHandler(client, webhook))
 }
 
 func getTemplateHandler(client *db.Client) echo.HandlerFunc {
@@ -123,7 +126,7 @@ func getChannelsHandler(client *db.Client) echo.HandlerFunc {
 	}
 }
 
-func patchChannelStateHandler(client *db.Client) echo.HandlerFunc {
+func patchChannelStateHandler(client *db.Client, webhook *discord.WebhookClient) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
 		Year  int    `json:"year"`
@@ -146,6 +149,12 @@ func patchChannelStateHandler(client *db.Client) echo.HandlerFunc {
 		}
 
 		ctx := c.Request().Context()
+		actor, ok := appctx.ActorFromContext(ctx)
+		if !ok {
+			return c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error: ErrorBody{Code: "UNAUTHORIZED", Message: "sign-in is required"},
+			})
+		}
 		now := time.Now().Format(time.RFC3339)
 		collection := channelsCollectionForPeriod(req.Year, req.Month)
 		ref := client.NewRef(collection).Child(channelID)
@@ -166,6 +175,17 @@ func patchChannelStateHandler(client *db.Client) echo.HandlerFunc {
 		var ch ChannelResponse
 		if err := ref.Get(ctx, &ch); err != nil {
 			return internalError(c)
+		}
+		if existing.State != "done" && req.State == "done" && webhook != nil {
+			actorName := actorDisplayName(ctx, client, actor)
+			fields := []discord.WebhookEmbedField{
+				{Name: "SNS", Value: ch.Name, Inline: true},
+				{Name: "実行者", Value: actorName, Inline: true},
+				{Name: "対象月", Value: fmt.Sprintf("%d年%d月", req.Year, req.Month), Inline: true},
+			}
+			if _, err := webhook.SendEmbed(ctx, "広報が Done になりました", fmt.Sprintf("%sさんが%sへの広報をDoneしました。", actorName, ch.Name), fields); err != nil {
+				return internalErrorWithLog(c, "publicity done notification failed", err, "channel_id", channelID, "year", req.Year, "month", req.Month)
+			}
 		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"channel": ch})
 	}

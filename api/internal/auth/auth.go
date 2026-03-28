@@ -67,28 +67,20 @@ func NewAuthenticator(verifier Verifier, syncer Syncer) *Authenticator {
 	return &Authenticator{verifier: verifier, syncer: syncer}
 }
 
-// isSimpleAPIPath returns true for endpoints defined in docs/backend-api-request.md
-// that do not require authentication in the current phase (暫定で認証不要).
-func isSimpleAPIPath(reqPath string) bool {
-	if reqPath == "/api/v1/meeting" ||
-		strings.HasPrefix(reqPath, "/api/v1/publicity/") {
+// isSimpleAPIPath returns true for read-only simple API endpoints that can be
+// called without authentication. State-changing endpoints require auth.
+func isSimpleAPIPath(method, reqPath string) bool {
+	if reqPath == "/api/v1/meeting" {
 		return true
 	}
 	if reqPath == "/api/v1/meeting/share" {
 		return false
 	}
-	if reqPath == "/api/v1/tasks" {
-		return true
+	if strings.HasPrefix(reqPath, "/api/v1/publicity/") {
+		return method == http.MethodGet
 	}
-	if strings.HasPrefix(reqPath, "/api/v1/tasks/") {
-		suffix := strings.TrimPrefix(reqPath, "/api/v1/tasks/")
-		parts := strings.SplitN(suffix, "/", 2)
-		if len(parts) == 2 {
-			switch parts[1] {
-			case "owner", "url", "state":
-				return true
-			}
-		}
+	if reqPath == "/api/v1/tasks" {
+		return method == http.MethodGet
 	}
 	if reqPath == "/api/v1/workflow-periods" || reqPath == "/api/v1/workflow-periods/provision" {
 		return true
@@ -101,7 +93,7 @@ func (a *Authenticator) Middleware() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			requestPath := c.Request().URL.Path
 			switch {
-			case isSimpleAPIPath(requestPath):
+			case isSimpleAPIPath(c.Request().Method, requestPath):
 				return next(c)
 			case strings.HasPrefix(requestPath, "/api/"):
 				return a.authorizeUser(next, c)

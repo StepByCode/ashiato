@@ -121,9 +121,9 @@ func NewHTTPHandler(ctx context.Context) (http.Handler, config.Config, *slog.Log
 	handler.RegisterMemberRoutes(apiGroup, service)
 
 	simpleGroup := e.Group("/api/v1")
-	simpleapi.RegisterTaskRoutes(simpleGroup, dbClient)
+	simpleapi.RegisterTaskRoutes(simpleGroup, dbClient, webhook)
 	simpleapi.RegisterMeetingRoutes(simpleGroup, dbClient, webhook)
-	simpleapi.RegisterPublicityRoutes(simpleGroup, dbClient)
+	simpleapi.RegisterPublicityRoutes(simpleGroup, dbClient, webhook)
 	simpleapi.RegisterProfileRoutes(simpleGroup, dbClient)
 	simpleapi.RegisterWorkflowPeriodRoutes(simpleGroup, dbClient)
 	simpleapi.RegisterInviteRoutes(simpleGroup, simpleapi.InviteDeps{

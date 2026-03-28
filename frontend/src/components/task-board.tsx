@@ -106,11 +106,11 @@ export function TaskBoard() {
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newAssigneeId, setNewAssigneeId] = useState("");
+  const [savedTaskUrls, setSavedTaskUrls] = useState<Record<string, string>>({});
   const [pendingAction, setPendingAction] = useState<{
     taskId: string;
     type: "approve" | "mark_done" | "mark_in_progress";
   } | null>(null);
-  const urlTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const saveNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showSaveNotice, setShowSaveNotice] = useState(false);
@@ -139,6 +139,12 @@ export function TaskBoard() {
           url: t.url ?? "",
         })));
         setTasks((prev) => (tasksEqual(prev, fetched) ? prev : fetched));
+        setSavedTaskUrls(
+          fetched.reduce<Record<string, string>>((acc, task) => {
+            acc[task.id] = task.url ?? "";
+            return acc;
+          }, {})
+        );
       }
     } catch {
       // API unreachable - show empty state
@@ -237,6 +243,7 @@ export function TaskBoard() {
             url: t.url ?? "",
           },
         ]));
+        setSavedTaskUrls((prev) => ({ ...prev, [t.id]: t.url ?? "" }));
         setNewTitle("");
         setNewAssigneeId("");
         setCreateOpen(false);
@@ -284,8 +291,13 @@ export function TaskBoard() {
 
   const updateUrl = useCallback((id: string, url: string) => {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url } : task)));
-    if (urlTimers.current[id]) clearTimeout(urlTimers.current[id]);
-    urlTimers.current[id] = setTimeout(async () => {
+  }, []);
+
+  const saveUrlOnBlur = useCallback(async (id: string, url: string) => {
+    const savedUrl = savedTaskUrls[id] ?? "";
+    if (url.trim() === savedUrl.trim()) return;
+
+    try {
       const token = await getIdToken();
       const res = await apiFetch(`/api/v1/tasks/${id}/url`, token, {
         method: "PATCH",
@@ -294,11 +306,16 @@ export function TaskBoard() {
       if (res.ok) {
         const data = await res.json();
         const t = data.task;
-        setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, url: t.url ?? "" } : task)));
+        setTasks((prev) =>
+          prev.map((task) => (task.id === id ? { ...task, url: t.url ?? "" } : task))
+        );
+        setSavedTaskUrls((prev) => ({ ...prev, [id]: t.url ?? "" }));
         flashSaveNotice();
       }
-    }, 600);
-  }, [flashSaveNotice, getIdToken]);
+    } catch {
+      // ignore network errors
+    }
+  }, [flashSaveNotice, getIdToken, savedTaskUrls]);
 
   const changeTaskState = async (id: string, state: TaskState) => {
     try {
@@ -543,6 +560,7 @@ export function TaskBoard() {
                       placeholder={isEventNameTask ? "イベント名" : "URL"}
                       value={task.url}
                       onChange={(e) => updateUrl(task.id, e.target.value)}
+                      onBlur={(e) => void saveUrlOnBlur(task.id, e.target.value)}
                     />
                   </div>
 

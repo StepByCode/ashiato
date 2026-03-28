@@ -352,8 +352,8 @@ export function TaskBoard() {
           const isAssigneeSelf = Boolean(currentMemberId) && currentMemberId === task.assigneeId;
           const showApprove =
             !isEventNameTask && hasAssignee && !isAssigneeSelf && (task.state === "done" || task.state === "approved");
-          const showDoneAction = !isEventNameTask && hasAssignee && isAssigneeSelf;
           const isApproved = task.state === "approved";
+          const showDoneAction = !isEventNameTask && hasAssignee && isAssigneeSelf && !isApproved;
           const isDoneLike = task.state !== "in_progress";
           const isApproveConfirmOpen =
             pendingAction?.taskId === task.id && pendingAction.type === "approve" && !isApproved;
@@ -369,6 +369,7 @@ export function TaskBoard() {
 
           const fixedTask = fixedTasks.find((entry) => entry.title === task.title);
           const allowEmptyAssignee = !fixedTask?.assigneeRequired;
+          const assigneeLabel = task.assigneeName || members.find((member) => member.id === task.assigneeId)?.name || "";
 
           return (
             <Card
@@ -382,6 +383,11 @@ export function TaskBoard() {
                       <h3 className="min-w-0 break-words text-2xl font-semibold tracking-tight sm:text-3xl">
                         {task.title}
                       </h3>
+                      {!isEventNameTask && assigneeLabel ? (
+                        <span className="rounded-full border border-border/70 bg-background/85 px-3 py-1 text-sm font-medium text-foreground/80 shadow-sm">
+                          担当: {assigneeLabel}
+                        </span>
+                      ) : null}
                       {!isEventNameTask ? (
                         <div className="relative w-full sm:max-w-60">
                           <select
@@ -461,7 +467,7 @@ export function TaskBoard() {
                           }}
                         >
                           {isDoneLike ? <RotateCcw className="size-4" /> : <CheckCheck className="size-4" />}
-                          Done
+                          {isDoneLike ? "Doneを取り消す" : "Done"}
                         </Button>
 
                         {isDoneConfirmOpen ? (

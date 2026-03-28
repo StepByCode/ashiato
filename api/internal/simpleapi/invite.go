@@ -303,7 +303,7 @@ func rollbackInvite(ctx context.Context, deps InviteDeps, uid string) error {
 func sendInviteEmail(ctx context.Context, apiKey, fromEmail, loginURL, toEmail, password string) error {
 	loginURL = strings.TrimSpace(loginURL)
 	if loginURL == "" {
-		loginURL = "https://backstage.stepbycode.work/login"
+		loginURL = "https://backatage.stepbycode.work/login"
 	}
 
 	htmlBody := fmt.Sprintf(`

@@ -127,7 +127,7 @@ async function fetchFromAPI(path: string) {
 
 - `/invite` ページからログイン済みメンバーが新規アカウントを発行できます
 - メールアドレスを入力すると API が Firebase Auth ユーザーを作成し、初回パスワードを自動生成します
-- Resend が設定されていれば、招待メールで初回ログイン情報を送信します
+- Resend が設定されていれば、招待メールで初回ログイン情報とログイン画面 URL（`INVITE_LOGIN_URL`）を送信します
 - 招待されたユーザーはログイン後に `/profile-setup` で初期プロフィールを登録します
 
 ### ロール付与

@@ -42,6 +42,8 @@ api/
 | `DEFAULT_ORG_NAME` | seed 組織名 |
 | `DEFAULT_ORG_SLUG` | seed 組織 slug |
 | `OWNER_EMAILS` | `OWNER` 扱いにする email の CSV |
+| `INVITE_FROM_EMAIL` | 招待メール送信元メールアドレス（デフォルト `no-reply@stepbycode.work`） |
+| `INVITE_LOGIN_URL` | 招待メールに記載するログイン画面 URL（デフォルト `https://backstage.stepbycode.work/login`） |
 | `CORS_ALLOWED_ORIGINS` | 追加で許可する Origin の CSV。`https://backatage.stepbycode.work` のような完全一致と `https://*.stepbycode.work` / `*.vercel.app` のようなワイルドカードを受け付ける |
 | `PORT` | サーバーポート（デフォルト `9999`、Coolify では Internal Port も同じ値に揃える） |
 

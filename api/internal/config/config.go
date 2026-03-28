@@ -32,7 +32,7 @@ func Load() (Config, error) {
 		Port:                    defaultValue(strings.TrimSpace(os.Getenv("PORT")), "9999"),
 		ResendAPIKey:            strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 		InviteFromEmail:         defaultValue(strings.TrimSpace(os.Getenv("INVITE_FROM_EMAIL")), "no-reply@stepbycode.work"),
-		InviteLoginURL:          defaultValue(strings.TrimSpace(os.Getenv("INVITE_LOGIN_URL")), "https://backstage.stepbycode.work/login"),
+		InviteLoginURL:          defaultValue(strings.TrimSpace(os.Getenv("INVITE_LOGIN_URL")), "https://backatage.stepbycode.work/login"),
 		CronSecret:              strings.TrimSpace(os.Getenv("CRON_SECRET")),
 		CORSAllowedOrigins:      parseCSV(strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))),
 	}

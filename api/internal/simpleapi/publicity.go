@@ -60,7 +60,7 @@ func getTemplateHandler(client *db.Client) echo.HandlerFunc {
 		var resp TemplateResponse
 		if err := ref.Get(c.Request().Context(), &resp); err != nil || resp.UpdatedAt == "" {
 			return c.JSON(http.StatusOK, TemplateResponse{
-				Text:      "",
+				Text:      "【告知👣】自分だけのブログサイトで発信を始めませんか？\n3ヶ月連動イベント企画実施中🎉\n\n第2回「公開編」！現地＆リモートOK🔗\n第1回未参加の方もサポート！\n初心者・学生・社会人、誰でも大歓迎！\n詳細は返信欄↓",
 				UpdatedAt: time.Now().Format(time.RFC3339),
 			})
 		}

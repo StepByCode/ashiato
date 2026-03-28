@@ -26,8 +26,8 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #111111;
+  --primary-foreground: #f6f1e7;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -62,54 +62,6 @@
   --radius: 1rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --accent: #df6900;
-    --background: #24353e;
-    --letter: #fff6ef;
-    --letter-light: #fff6ef;
-    --regular: #424445;
-    --success: #6cbd80;
-    --done-all: #7fb2d1;
-    --sidebar-gray: var(--regular);
-    --card-gray: var(--regular);
-    --shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
-    --foreground: #fff6ef;
-    --card: #424445;
-    --card-foreground: #fff6ef;
-    --popover: #424445;
-    --popover-foreground: #fff6ef;
-    --primary: #df6900;
-    --primary-foreground: #fff6ef;
-    --secondary: #424445;
-    --secondary-foreground: #fff6ef;
-    --muted: #424445;
-    --muted-foreground: color-mix(in srgb, var(--letter) 72%, transparent);
-    --accent-foreground: #fff6ef;
-    --border: color-mix(in srgb, var(--letter) 14%, transparent);
-    --input: color-mix(in srgb, var(--letter) 14%, transparent);
-    --ring: #7fb2d1;
-    --sidebar: #424445;
-    --sidebar-foreground: #fff6ef;
-    --sidebar-primary: #df6900;
-    --sidebar-primary-foreground: #fff6ef;
-    --sidebar-accent: #424445;
-    --sidebar-accent-foreground: #fff6ef;
-    --sidebar-border: color-mix(in srgb, var(--letter) 14%, transparent);
-    --sidebar-ring: #7fb2d1;
-    --surface-input: color-mix(in srgb, var(--background) 82%, white);
-    --surface-button: color-mix(in srgb, var(--regular) 88%, black);
-    --surface-button-subtle: color-mix(in srgb, var(--regular) 82%, white);
-    --surface-popover: color-mix(in srgb, var(--background) 92%, white);
-    --surface-panel: color-mix(in srgb, var(--background) 88%, var(--regular));
-    --surface-success: color-mix(in srgb, var(--success) 66%, var(--background));
-    --surface-accent: color-mix(in srgb, var(--done-all) 58%, var(--background));
-    --surface-accent-strong: color-mix(in srgb, var(--done-all) 70%, var(--background));
-    --url-color: #9ec5ff;
-  }
-}
-
 :root.dark,
 .dark {
   color-scheme: dark;
@@ -128,8 +80,8 @@
   --card-foreground: #fff6ef;
   --popover: #424445;
   --popover-foreground: #fff6ef;
-  --primary: #df6900;
-  --primary-foreground: #fff6ef;
+  --primary: #f6f1e7;
+  --primary-foreground: #111111;
   --secondary: #424445;
   --secondary-foreground: #fff6ef;
   --muted: #424445;

@@ -51,7 +51,7 @@ export function WorkflowShell({
       return savedThemeMode;
     }
 
-    return document.documentElement.classList.contains("dark") ? "dark" : "light";
+    return "light";
   });
   const [animatedStep, setAnimatedStep] = useState<WorkflowStep>(() => {
     if (typeof window === "undefined") return activeStep;
@@ -59,9 +59,11 @@ export function WorkflowShell({
     return isWorkflowStep(savedStep) ? savedStep : activeStep;
   });
   const [showCompleteLabel, setShowCompleteLabel] = useState(false);
+  const [completionPhase, setCompletionPhase] = useState<"idle" | "showing" | "after">("idle");
   const [provisioning, setProvisioning] = useState(false);
 
   const progressWidth = isWorkflowComplete ? "calc(100% - 4rem)" : progressWidths[animatedStep];
+  const showCompletionFrame = isWorkflowComplete && completionPhase === "after";
 
   // Build display months from periods (up to 4, newest first).
   const displayMonths: Period[] =
@@ -122,12 +124,17 @@ export function WorkflowShell({
   useEffect(() => {
     if (!isWorkflowComplete) {
       setShowCompleteLabel(false);
+      setCompletionPhase("idle");
       return;
     }
 
+    setShowCompleteLabel(true);
+    setCompletionPhase("showing");
+
     const timerId = window.setTimeout(() => {
-      setShowCompleteLabel(true);
-    }, 500);
+      setShowCompleteLabel(false);
+      setCompletionPhase("after");
+    }, 2000);
 
     return () => window.clearTimeout(timerId);
   }, [isWorkflowComplete]);
@@ -154,7 +161,7 @@ export function WorkflowShell({
                     className={cn(
                       "min-h-12 rounded-full border px-4 py-3 text-base font-semibold shadow-sm cursor-pointer",
                       isSelected
-                        ? "border-primary/30 bg-primary text-primary-foreground"
+                        ? "border-[color:var(--accent)] text-[color:var(--accent)] ring-2 ring-[color:var(--accent)]/40"
                         : "border-border/70 bg-background/80 text-foreground hover:bg-background/95"
                     )}
                   >
@@ -229,7 +236,7 @@ export function WorkflowShell({
                             className={cn(
                               "min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold shadow-sm cursor-pointer",
                               isSelected
-                                ? "border-primary/30 bg-primary text-primary-foreground"
+                                ? "border-[color:var(--accent)] text-[color:var(--accent)] ring-2 ring-[color:var(--accent)]/40"
                                 : "border-border/70 bg-background/80 text-foreground"
                             )}
                           >
@@ -280,7 +287,12 @@ export function WorkflowShell({
                 </div>
               </div>
 
-              <Card className="rounded-[1.75rem] border-border/70 bg-background/70">
+              <Card
+                className={cn(
+                  "rounded-[1.75rem] border-border/70 bg-background/70",
+                  showCompletionFrame && "border-[color:var(--accent)] ring-2 ring-[color:var(--accent)]/40"
+                )}
+              >
                 <CardContent className="p-4 sm:p-5">
                   <div className="relative min-h-16">
                     <div
@@ -289,9 +301,9 @@ export function WorkflowShell({
                         showCompleteLabel ? "pointer-events-none opacity-0" : "opacity-100"
                       )}
                     >
-                      <div className="pointer-events-none absolute left-8 right-8 top-6 h-px bg-primary/30 sm:top-7" />
+                      <div className="pointer-events-none absolute left-8 right-8 top-6 h-px bg-[color:var(--accent)]/35 sm:top-7" />
                       <div
-                        className="pointer-events-none absolute left-8 top-[22px] h-2 rounded-full bg-zinc-700 transition-[width] duration-700 ease-in-out dark:bg-primary sm:top-[25px]"
+                        className="pointer-events-none absolute left-8 top-[22px] h-2 rounded-full bg-[color:var(--accent)] transition-[width] duration-700 ease-in-out sm:top-[25px]"
                         style={{ width: progressWidth }}
                       />
                       {workflowSteps.map((step) => {
@@ -312,11 +324,11 @@ export function WorkflowShell({
                               className={cn(
                                 "flex size-12 items-center justify-center rounded-full border-2 bg-background text-sm font-semibold shadow-sm sm:size-14",
                                 "transition-all duration-700 ease-out",
-                                isActive && !isWorkflowComplete
-                                  ? "border-primary bg-primary text-primary-foreground"
+                                isActive
+                                  ? "border-[color:var(--accent)] bg-[color:var(--accent)] text-white"
                                   : isCompletedVisual
-                                    ? "border-zinc-700 text-foreground hover:-translate-y-0.5 hover:bg-background/95 dark:border-primary"
-                                    : "border-border/80 text-foreground hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background/95"
+                                    ? "border-[color:var(--accent)] text-foreground hover:-translate-y-0.5 hover:bg-background/95"
+                                    : "border-border/80 text-foreground hover:-translate-y-0.5 hover:border-[color:var(--accent)]/50 hover:bg-background/95"
                               )}
                             >
                               {step.label}

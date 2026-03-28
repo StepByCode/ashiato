@@ -14,7 +14,6 @@ import { usePeriod } from "@/lib/period-context";
 import { WorkflowShell } from "./workflow-shell";
 
 type TaskState = "in_progress" | "done" | "approved";
-
 type Task = {
   id: string;
   title: string;
@@ -362,9 +361,7 @@ export function TaskBoard() {
           const pendingCopy =
             pendingAction?.type === "approve"
               ? "Approveしますか？"
-              : `（${
-                  taskStateLabels[pendingAction?.type === "mark_in_progress" ? "in_progress" : "done"]
-                }）に変更しますか？`;
+              : `${taskStateLabels[pendingAction?.type === "mark_in_progress" ? "in_progress" : "done"]} に変更しますか？`;
 
           const fixedTask = fixedTasks.find((entry) => entry.title === task.title);
           const allowEmptyAssignee = !fixedTask?.assigneeRequired;
@@ -419,7 +416,7 @@ export function TaskBoard() {
                           }}
                         >
                           <CheckCheck className="size-4" />
-                          {isApproved ? "Approved" : "Approve"}
+                        Approve
                         </Button>
 
                         {isApproveConfirmOpen ? (
@@ -460,7 +457,7 @@ export function TaskBoard() {
                           }}
                         >
                           {isDoneLike ? <RotateCcw className="size-4" /> : <CheckCheck className="size-4" />}
-                          {isDoneLike ? "Done" : "in progress"}
+                          Done
                         </Button>
 
                         {isDoneConfirmOpen ? (

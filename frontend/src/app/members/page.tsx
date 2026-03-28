@@ -6,6 +6,8 @@ import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import "./members.css";
 
+export const dynamic = "force-dynamic";
+
 type Member = {
   id: string;
   email: string;
@@ -46,7 +48,15 @@ export default function MembersPage() {
     }
   }, [fetchMembers, loading, router, user]);
 
-  if (loading || !user) return null;
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  if (loading) return null;
+  if (!user) {
+    router.replace("/login");
+    return null;
+  }
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();

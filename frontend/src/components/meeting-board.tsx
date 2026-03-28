@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { CalendarDays, ChevronDown, Clock3, ExternalLink, Link2, Loader2 } from "lucide-react";
+import { CalendarDays, ChevronDown, Clock3, ExternalLink, Link2, Loader2, Share2 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -257,6 +257,17 @@ export function MeetingBoard() {
               <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">定例情報</h3>
             </div>
 
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11 rounded-full border-2 border-[color:var(--accent)] bg-[color:var(--accent)] px-6 text-base font-semibold text-white shadow-lg shadow-[color:var(--accent)]/30 transition hover:-translate-y-0.5 hover:bg-[color:var(--accent)]/90 hover:shadow-xl focus-visible:ring-[color:var(--accent)]"
+              >
+                <Share2 className="size-4" />
+                定例の予定を共有
+              </Button>
+            </div>
+
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="space-y-3">
                 <label htmlFor="meeting-datetime" className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -344,7 +355,7 @@ export function MeetingBoard() {
               <div className="space-y-3">
                 <label htmlFor="meeting-url" className="flex items-center gap-2 text-sm font-semibold text-foreground">
                   <Link2 className="size-4 text-primary" />
-                  Meetのリンク貼付
+                  meetingLink
                 </label>
                 <Input
                   id="meeting-url"

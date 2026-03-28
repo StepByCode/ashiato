@@ -273,6 +273,10 @@ export function TaskBoard() {
   };
 
   const updateAssignee = async (id: string, assigneeId: string) => {
+    const targetPeriod = {
+      year: selectedPeriod.year,
+      month: selectedPeriod.month,
+    };
     const member = members.find((entry) => entry.id === assigneeId);
     setTasks((prev) =>
       prev.map((task) =>
@@ -285,7 +289,11 @@ export function TaskBoard() {
       const token = await getIdToken();
       const res = await apiFetch(`/api/v1/tasks/${id}/assignee`, token, {
         method: "PATCH",
-        body: JSON.stringify({ assigneeId }),
+        body: JSON.stringify({
+          assigneeId,
+          year: targetPeriod.year,
+          month: targetPeriod.month,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -314,12 +322,20 @@ export function TaskBoard() {
   const saveUrlOnBlur = useCallback(async (id: string, url: string) => {
     const savedUrl = savedTaskUrls[id] ?? "";
     if (url.trim() === savedUrl.trim()) return;
+    const targetPeriod = {
+      year: selectedPeriod.year,
+      month: selectedPeriod.month,
+    };
 
     try {
       const token = await getIdToken();
       const res = await apiFetch(`/api/v1/tasks/${id}/url`, token, {
         method: "PATCH",
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({
+          url,
+          year: targetPeriod.year,
+          month: targetPeriod.month,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -333,14 +349,22 @@ export function TaskBoard() {
     } catch {
       // ignore network errors
     }
-  }, [flashSaveNotice, getIdToken, savedTaskUrls]);
+  }, [flashSaveNotice, getIdToken, savedTaskUrls, selectedPeriod.month, selectedPeriod.year]);
 
   const changeTaskState = async (id: string, state: TaskState) => {
+    const targetPeriod = {
+      year: selectedPeriod.year,
+      month: selectedPeriod.month,
+    };
     try {
       const token = await getIdToken();
       const res = await apiFetch(`/api/v1/tasks/${id}/state`, token, {
         method: "PATCH",
-        body: JSON.stringify({ state }),
+        body: JSON.stringify({
+          state,
+          year: targetPeriod.year,
+          month: targetPeriod.month,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -348,7 +372,7 @@ export function TaskBoard() {
         setTasks((prev) =>
           prev.map((task) => (task.id === id ? { ...task, state: t.state as TaskState } : task))
         );
-        void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
+        void fetchTasks(targetPeriod.year, targetPeriod.month, { silent: true });
       }
     } catch {
       // ignore network errors

@@ -331,6 +331,8 @@ func createTaskHandler(client *db.Client) echo.HandlerFunc {
 func patchTaskAssigneeHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
 		AssigneeID string `json:"assigneeId"`
+		Year       int    `json:"year"`
+		Month      int    `json:"month"`
 	}
 	return func(c echo.Context) error {
 		taskID := c.Param("taskId")
@@ -339,20 +341,22 @@ func patchTaskAssigneeHandler(client *db.Client) echo.HandlerFunc {
 			return validationError(c, "body", "invalid JSON")
 		}
 
-		task, _ := findTask(c.Request().Context(), client, taskID)
+		task, _ := findTask(c.Request().Context(), client, taskID, req.Year, req.Month)
 		if task == nil {
 			return notFoundError(c, "task not found")
 		}
 		if req.AssigneeID == "" && !taskAllowsEmptyAssignee(task.Title) {
 			return validationError(c, "assigneeId", "is required")
 		}
-		return updateTaskAssignee(c, client, taskID, req.AssigneeID)
+		return updateTaskAssignee(c, client, taskID, req.AssigneeID, req.Year, req.Month)
 	}
 }
 
 func patchTaskURLHandler(client *db.Client) echo.HandlerFunc {
 	type request struct {
-		URL string `json:"url"`
+		URL   string `json:"url"`
+		Year  int    `json:"year"`
+		Month int    `json:"month"`
 	}
 	return func(c echo.Context) error {
 		var req request
@@ -362,13 +366,15 @@ func patchTaskURLHandler(client *db.Client) echo.HandlerFunc {
 		if len(req.URL) > 2048 {
 			return validationError(c, "url", "must be at most 2048 characters")
 		}
-		return updateTaskField(c, client, c.Param("taskId"), "url", req.URL)
+		return updateTaskField(c, client, c.Param("taskId"), "url", req.URL, req.Year, req.Month)
 	}
 }
 
 func patchTaskStateHandler(client *db.Client, webhook *discord.WebhookClient) echo.HandlerFunc {
 	type request struct {
 		State string `json:"state"`
+		Year  int    `json:"year"`
+		Month int    `json:"month"`
 	}
 	return func(c echo.Context) error {
 		taskID := c.Param("taskId")
@@ -389,7 +395,7 @@ func patchTaskStateHandler(client *db.Client, webhook *discord.WebhookClient) ec
 		}
 
 		// Search for the task across all collections (current and period-specific).
-		task, ref := findTask(ctx, client, taskID)
+		task, ref := findTask(ctx, client, taskID, req.Year, req.Month)
 		if task == nil {
 			return notFoundError(c, "task not found")
 		}
@@ -432,12 +438,12 @@ func patchTaskStateHandler(client *db.Client, webhook *discord.WebhookClient) ec
 	}
 }
 
-func updateTaskField(c echo.Context, client *db.Client, taskID, field, value string) error {
+func updateTaskField(c echo.Context, client *db.Client, taskID, field, value string, year, month int) error {
 	ctx := c.Request().Context()
 	now := time.Now().Format(time.RFC3339)
 
 	// Search for the task across collections.
-	task, ref := findTask(ctx, client, taskID)
+	task, ref := findTask(ctx, client, taskID, year, month)
 	if task == nil {
 		return notFoundError(c, "task not found")
 	}
@@ -458,11 +464,11 @@ func updateTaskField(c echo.Context, client *db.Client, taskID, field, value str
 	return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})
 }
 
-func updateTaskAssignee(c echo.Context, client *db.Client, taskID, assigneeID string) error {
+func updateTaskAssignee(c echo.Context, client *db.Client, taskID, assigneeID string, year, month int) error {
 	ctx := c.Request().Context()
 	now := time.Now().Format(time.RFC3339)
 
-	task, ref := findTask(ctx, client, taskID)
+	task, ref := findTask(ctx, client, taskID, year, month)
 	if task == nil {
 		return notFoundError(c, "task not found")
 	}
@@ -487,13 +493,19 @@ func updateTaskAssignee(c echo.Context, client *db.Client, taskID, assigneeID st
 	return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})
 }
 
-// findTask searches for a task first in the default collection, then looks it up
-// by checking if the ID exists. For period-based tasks, the task ID contains
-// the info needed. We check the default collection first for backward compat.
-func findTask(ctx context.Context, client *db.Client, taskID string) (*TaskResponse, *db.Ref) {
+// findTask resolves a task by ID. When year/month are provided, it checks the
+// target period collection first so repeated fixed task IDs don't collide across months.
+func findTask(ctx context.Context, client *db.Client, taskID string, year, month int) (*TaskResponse, *db.Ref) {
+	var task TaskResponse
+	if year != 0 && month != 0 {
+		ref := client.NewRef(tasksCollectionForPeriod(year, month)).Child(taskID)
+		if err := ref.Get(ctx, &task); err == nil && task.ID != "" {
+			return &task, ref
+		}
+	}
+
 	// Try default collection first.
 	ref := client.NewRef(tasksCollection).Child(taskID)
-	var task TaskResponse
 	if err := ref.Get(ctx, &task); err == nil && task.ID != "" {
 		return &task, ref
 	}

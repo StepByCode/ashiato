@@ -98,15 +98,14 @@ export function PublicityBoard() {
         );
         const ensured = REQUIRED_CHANNELS.map((rc) => {
           const existing = fetched.get(rc.id);
-          return (
-            existing ?? {
-              id: rc.id,
-              name: rc.name,
-              note: "",
-              state: "in_progress" as ChannelState,
-            }
-          );
-        });
+          const fallback: ChannelCard = {
+            id: rc.id,
+            name: rc.name,
+            note: "",
+            state: "in_progress",
+          };
+          return existing ?? fallback;
+        }) as ChannelCard[];
         setChannels(ensured);
       } else {
         setChannels(DEFAULT_CHANNELS);

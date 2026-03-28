@@ -143,6 +143,7 @@ flowchart TD
 - `/profile-setup`
 - `/settings`
 - `/invite`
+  - 招待済みメンバー一覧では **自分自身の招待取り消しは不可**（UIでボタン無効化し、APIでも拒否）
 - `/`
 - `/meeting`
 - `/task-create`

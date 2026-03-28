@@ -52,6 +52,9 @@
 | `PUT /api/v1/meetings/*` | 可 | 可 | 不可 | - |
 | `GET /api/v1/announcements/*` | 可 | 可 | 可 | - |
 | `PUT/POST /api/v1/announcements*` | 可 | 可 | 不可 | 投稿指示は API が正データ化 |
+| `GET /api/v1/invites` | 可 | 可 | 可 | 招待済み一覧の参照 |
+| `POST /api/v1/invite` | 可 | 可 | 不可 | 招待発行 |
+| `DELETE /api/v1/invite/{uid}` | 可 | 可 | 不可 | **自分自身 (`actor.subject == uid`) の取り消しは禁止** |
 | `GET/POST /internal/v1/announcement-publish-requests*` | service token | service token | service token | `X-Bot-Token` が必須 |
 
 ## 5. ABAC 条件

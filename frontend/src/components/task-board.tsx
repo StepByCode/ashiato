@@ -148,13 +148,18 @@ export function TaskBoard() {
       const res = await apiFetch("/api/v1/members", token);
       if (!res.ok) return;
       const data = await res.json();
-      setMembers(
-        (data.members ?? []).map((member: Record<string, string>) => ({
+      const deduped = new Map<string, Member>();
+      for (const member of data.members ?? []) {
+        const normalizedEmail = (member.email ?? "").trim().toLowerCase();
+        const key = normalizedEmail || member.id;
+        if (deduped.has(key)) continue;
+        deduped.set(key, {
           id: member.id,
           name: member.name || "表示名未設定",
           email: member.email,
-        }))
-      );
+        });
+      }
+      setMembers(Array.from(deduped.values()));
     } catch {
       // ignore
     }

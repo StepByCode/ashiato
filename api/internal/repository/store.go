@@ -170,12 +170,9 @@ func (s *Store) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([
 	}
 
 	var members []domain.Member
-	seenUserIDs := map[string]struct{}{}
+	seenKeys := map[string]struct{}{}
 	for _, m := range all {
 		if m.OrganizationID != orgID.String() {
-			continue
-		}
-		if _, exists := seenUserIDs[m.UserID]; exists {
 			continue
 		}
 		userID, _ := uuid.Parse(m.UserID)
@@ -186,7 +183,19 @@ func (s *Store) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([
 		if user.Email == "" {
 			continue
 		}
-		seenUserIDs[m.UserID] = struct{}{}
+
+		identityKey := strings.TrimSpace(user.FirebaseUID)
+		if identityKey == "" {
+			identityKey = strings.ToLower(strings.TrimSpace(user.Email))
+		}
+		if identityKey == "" {
+			identityKey = m.UserID
+		}
+		if _, exists := seenKeys[identityKey]; exists {
+			continue
+		}
+		seenKeys[identityKey] = struct{}{}
+
 		members = append(members, domain.Member{
 			ID:    userID,
 			Email: user.Email,
@@ -739,18 +748,18 @@ func (s *Store) ListPendingPublishRequests(ctx context.Context) ([]uuid.UUID, []
 // --- Audit Logs ---
 
 type AuditLogDoc struct {
-	OrganizationID string `json:"organization_id"`
+	OrganizationID string  `json:"organization_id"`
 	ActorUserID    *string `json:"actor_user_id,omitempty"`
-	ActorType      string `json:"actor_type"`
-	ActorLabel     string `json:"actor_label"`
-	Action         string `json:"action"`
-	ResourceType   string `json:"resource_type"`
-	ResourceID     string `json:"resource_id"`
-	BeforeState    any    `json:"before_state,omitempty"`
-	AfterState     any    `json:"after_state,omitempty"`
-	Result         string `json:"result"`
-	IP             string `json:"ip"`
-	CreatedAt      string `json:"created_at"`
+	ActorType      string  `json:"actor_type"`
+	ActorLabel     string  `json:"actor_label"`
+	Action         string  `json:"action"`
+	ResourceType   string  `json:"resource_type"`
+	ResourceID     string  `json:"resource_id"`
+	BeforeState    any     `json:"before_state,omitempty"`
+	AfterState     any     `json:"after_state,omitempty"`
+	Result         string  `json:"result"`
+	IP             string  `json:"ip"`
+	CreatedAt      string  `json:"created_at"`
 }
 
 func (s *Store) CreateAuditLog(ctx context.Context, log AuditLogDoc) error {

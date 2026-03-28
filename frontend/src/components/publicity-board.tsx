@@ -65,11 +65,11 @@ export function PublicityBoard() {
   const { getIdToken } = useAuth();
   const { selectedPeriod } = usePeriod();
   const [template, setTemplate] = useState("");
+  const [savedTemplate, setSavedTemplate] = useState("");
   const [channels, setChannels] = useState<ChannelCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [creationDone, setCreationDone] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ channelId: ChannelId; targetState: ChannelState } | null>(null);
-  const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSaveNotice, setShowSaveNotice] = useState(false);
 
@@ -91,7 +91,9 @@ export function PublicityBoard() {
       ]);
       if (templateRes.ok) {
         const data = await templateRes.json();
-        setTemplate(data.text ?? "");
+        const nextTemplate = data.text ?? "";
+        setTemplate(nextTemplate);
+        setSavedTemplate(nextTemplate);
       }
       if (channelsRes.ok) {
         const data = await channelsRes.json();
@@ -145,20 +147,25 @@ export function PublicityBoard() {
   const publicityDone = channels.length > 0 && channels.every((channel) => channel.state === "done");
   const isWorkflowComplete = !loading && publicityDone && creationDone;
 
-  const handleTemplateChange = useCallback((text: string) => {
-    setTemplate(text);
-    if (templateTimer.current) clearTimeout(templateTimer.current);
-    templateTimer.current = setTimeout(async () => {
+  const handleTemplateBlur = useCallback(async () => {
+    const text = template.trim();
+    const saved = savedTemplate.trim();
+    if (text === saved) return;
+
+    try {
       const token = await getIdToken();
       const res = await apiFetch("/api/v1/publicity/template", token, {
         method: "PATCH",
-        body: JSON.stringify({ text, year: selectedPeriod.year, month: selectedPeriod.month }),
+        body: JSON.stringify({ text: template, year: selectedPeriod.year, month: selectedPeriod.month }),
       });
       if (res.ok) {
+        setSavedTemplate(template);
         flashSaveNotice();
       }
-    }, 600);
-  }, [flashSaveNotice, getIdToken, selectedPeriod.month, selectedPeriod.year]);
+    } catch {
+      // ignore network errors
+    }
+  }, [flashSaveNotice, getIdToken, savedTemplate, selectedPeriod.month, selectedPeriod.year, template]);
 
   const updateChannelState = async (id: ChannelId, state: ChannelState) => {
     setChannels((currentChannels) =>
@@ -213,7 +220,8 @@ export function PublicityBoard() {
                 className="min-h-64 rounded-[1.5rem] border-border/70 bg-background/85 px-4 py-4 text-base leading-7 shadow-sm"
                 maxLength={MAX_PUBLICITY_LENGTH}
                 value={template}
-                onChange={(event) => handleTemplateChange(event.target.value)}
+                onChange={(event) => setTemplate(event.target.value)}
+                onBlur={handleTemplateBlur}
               />
 
               <div className="flex flex-col gap-2 rounded-[1.25rem] border border-border/70 bg-background/60 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">

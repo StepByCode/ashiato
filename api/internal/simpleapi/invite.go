@@ -231,7 +231,8 @@ func markInvitePasswordChangedHandler(client *db.Client) echo.HandlerFunc {
 
 func revokeInviteHandler(deps InviteDeps) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		if _, ok := appctx.ActorFromContext(c.Request().Context()); !ok {
+		actor, ok := appctx.ActorFromContext(c.Request().Context())
+		if !ok {
 			return c.JSON(http.StatusUnauthorized, ErrorResponse{
 				Error: ErrorBody{Code: "UNAUTHORIZED", Message: "sign-in is required"},
 			})
@@ -240,6 +241,11 @@ func revokeInviteHandler(deps InviteDeps) echo.HandlerFunc {
 		uid := strings.TrimSpace(c.Param("uid"))
 		if uid == "" {
 			return validationError(c, "uid", "is required")
+		}
+		if actor.Subject == uid {
+			return c.JSON(http.StatusForbidden, ErrorResponse{
+				Error: ErrorBody{Code: "FORBIDDEN", Message: "cannot revoke your own invite"},
+			})
 		}
 
 		ctx := c.Request().Context()

@@ -83,6 +83,10 @@ export default function InvitePage() {
   };
 
   const handleRevoke = async (uid: string) => {
+    if (uid === user.uid) {
+      setError("自分自身の招待は取り消せません");
+      return;
+    }
     setError("");
     setRevokingUID(uid);
     try {
@@ -184,27 +188,46 @@ export default function InvitePage() {
             <p className="text-sm text-muted-foreground">まだ招待されたメンバーはいません。</p>
           ) : (
             <div className="space-y-2">
-              {invites.map((inv) => (
-                <div
-                  key={inv.uid}
-                  className="flex items-center justify-between rounded-xl border border-border/40 px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm">{inv.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {inv.createdAt ? new Date(inv.createdAt).toLocaleDateString("ja-JP") : ""}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRevoke(inv.uid)}
-                    disabled={revokingUID === inv.uid}
-                    className="rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+              {invites.map((inv) => {
+                // UI制御は補助目的。最終判定はAPI側で実施する。
+                // 自分自身の招待は取り消し操作を禁止する。
+                const isSelfInvite = inv.uid === user.uid;
+
+                return (
+                  <div
+                    key={inv.uid}
+                    className="flex items-center justify-between rounded-xl border border-border/40 px-4 py-3"
                   >
-                    {revokingUID === inv.uid ? "取消中..." : "取り消す"}
-                  </button>
-                </div>
-              ))}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm">
+                        {inv.email}
+                        {isSelfInvite && (
+                          <span className="ml-2 text-xs text-muted-foreground">(自分)</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {inv.createdAt ? new Date(inv.createdAt).toLocaleDateString("ja-JP") : ""}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRevoke(inv.uid)}
+                      disabled={revokingUID === inv.uid || isSelfInvite}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition disabled:opacity-50 ${
+                        isSelfInvite
+                          ? "border-border/60 text-muted-foreground"
+                          : "border-red-200 text-red-600 hover:bg-red-50"
+                      }`}
+                    >
+                      {revokingUID === inv.uid
+                        ? "取消中..."
+                        : isSelfInvite
+                          ? "自分は取消不可"
+                          : "取り消す"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

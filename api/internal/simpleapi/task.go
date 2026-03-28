@@ -137,6 +137,26 @@ func notifyTaskDone(ctx context.Context, webhook *discord.WebhookClient, actorNa
 	return err
 }
 
+func notifyTaskApproved(ctx context.Context, webhook *discord.WebhookClient, actorName string, task TaskResponse) error {
+	if webhook == nil {
+		return nil
+	}
+	fields := []discord.WebhookEmbedField{
+		{Name: "タスク", Value: task.Title, Inline: false},
+		{Name: "承認者", Value: actorName, Inline: true},
+	}
+	if task.AssigneeName != "" {
+		fields = append(fields, discord.WebhookEmbedField{Name: "担当者", Value: task.AssigneeName, Inline: true})
+	}
+	if task.Year != 0 && task.Month != 0 {
+		fields = append(fields, discord.WebhookEmbedField{
+			Name: "対象月", Value: fmt.Sprintf("%d年%d月", task.Year, task.Month), Inline: true,
+		})
+	}
+	_, err := webhook.SendEmbed(ctx, "作成タスクが Approve されました", fmt.Sprintf("%sさんが%sをApproveしました。", actorName, task.Title), fields)
+	return err
+}
+
 func ensureRequiredTasks(ctx context.Context, client *db.Client, year, month int) error {
 	collection := tasksCollectionForPeriod(year, month)
 	ref := client.NewRef(collection)
@@ -358,6 +378,11 @@ func patchTaskStateHandler(client *db.Client, webhook *discord.WebhookClient) ec
 		if task.State != "done" && req.State == "done" {
 			if err := notifyTaskDone(ctx, webhook, actorDisplayName(ctx, client, actor), updated); err != nil {
 				return internalErrorWithLog(c, "task done notification failed", err, "task_id", taskID)
+			}
+		}
+		if task.State != "approved" && req.State == "approved" {
+			if err := notifyTaskApproved(ctx, webhook, actorDisplayName(ctx, client, actor), updated); err != nil {
+				return internalErrorWithLog(c, "task approve notification failed", err, "task_id", taskID)
 			}
 		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"task": updated})

@@ -501,7 +501,7 @@ export function TaskBoard() {
                     ) : (
                       !isEventNameTask ? (
                         <div className="flex min-h-12 w-full items-center justify-center rounded-full border border-border/70 px-5 text-sm font-semibold text-muted-foreground">
-                          {hasAssignee ? "担当者が対応中です" : "担当者を設定してください"}
+                          {isApproved ? "このタスクは完了済みです。" : hasAssignee ? "担当者が対応中です" : "担当者を設定してください"}
                         </div>
                       ) : null
                     )}

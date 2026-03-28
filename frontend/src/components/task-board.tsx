@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { usePeriod } from "@/lib/period-context";
+import { periodLabel, usePeriod } from "@/lib/period-context";
 
 import { WorkflowShell } from "./workflow-shell";
 
@@ -114,6 +114,7 @@ export function TaskBoard() {
   const saveNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showSaveNotice, setShowSaveNotice] = useState(false);
+  const [createError, setCreateError] = useState("");
 
   const flashSaveNotice = useCallback(() => {
     setShowSaveNotice(true);
@@ -217,6 +218,7 @@ export function TaskBoard() {
   const handleCreateTask = async (event: FormEvent) => {
     event.preventDefault();
     if (!newTitle.trim() || !newAssigneeId) return;
+    setCreateError("");
 
     try {
       const token = await getIdToken();
@@ -248,9 +250,20 @@ export function TaskBoard() {
         setNewAssigneeId("");
         setCreateOpen(false);
         void fetchTasks(selectedPeriod.year, selectedPeriod.month, { silent: true });
+      } else {
+        let message = `${periodLabel(selectedPeriod)} へのタスク保存に失敗しました。`;
+        try {
+          const errorData = await res.json();
+          if (typeof errorData?.message === "string" && errorData.message.trim()) {
+            message += ` (${errorData.message})`;
+          }
+        } catch {
+          // ignore parse errors
+        }
+        setCreateError(message);
       }
     } catch {
-      // ignore network errors
+      setCreateError(`${periodLabel(selectedPeriod)} へのタスク保存中に通信エラーが発生しました。`);
     }
   };
 
@@ -370,16 +383,21 @@ export function TaskBoard() {
           </div>
         ) : null}
         <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11 rounded-full px-5 text-sm font-semibold shadow-sm"
-            onClick={handleManualRefresh}
-            disabled={refreshing}
-          >
-            <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-            {refreshing ? "更新中..." : "手動更新"}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <span className="rounded-full border border-border/70 bg-background/80 px-4 py-2 text-sm font-semibold text-foreground/80">
+              表示中: {periodLabel(selectedPeriod)}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 rounded-full px-5 text-sm font-semibold shadow-sm"
+              onClick={handleManualRefresh}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+              {refreshing ? "更新中..." : "手動更新"}
+            </Button>
+          </div>
         </div>
 
         {tasks.map((task) => {
@@ -608,6 +626,9 @@ export function TaskBoard() {
 
             {isCreateOpen ? (
               <div id="create-form-box" className="pt-6">
+                <p className="mb-3 text-sm font-medium text-muted-foreground">
+                  保存先: {periodLabel(selectedPeriod)}
+                </p>
                 <form
                   className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(220px,0.9fr)_auto] lg:items-end"
                   onSubmit={handleCreateTask}
@@ -649,6 +670,11 @@ export function TaskBoard() {
                     作成
                   </Button>
                 </form>
+                {createError ? (
+                  <p className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm font-medium text-destructive">
+                    {createError}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </CardContent>

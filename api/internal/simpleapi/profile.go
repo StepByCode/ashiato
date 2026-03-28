@@ -85,6 +85,10 @@ func patchProfileHandler(client *db.Client) echo.HandlerFunc {
 				return validationError(c, "name", "is required")
 			}
 			updates["name"] = name
+			_ = client.NewRef("users").Child(actor.UserID.String()).Update(ctx, map[string]interface{}{
+				"name":       name,
+				"updated_at": now,
+			})
 		}
 		if req.Position != nil {
 			updates["position"] = strings.TrimSpace(*req.Position)

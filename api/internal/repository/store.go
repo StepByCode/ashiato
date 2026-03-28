@@ -156,8 +156,12 @@ func (s *Store) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([
 	}
 
 	var members []domain.Member
+	seenUserIDs := map[string]struct{}{}
 	for _, m := range all {
 		if m.OrganizationID != orgID.String() {
+			continue
+		}
+		if _, exists := seenUserIDs[m.UserID]; exists {
 			continue
 		}
 		userID, _ := uuid.Parse(m.UserID)
@@ -168,6 +172,7 @@ func (s *Store) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([
 		if user.Email == "" {
 			continue
 		}
+		seenUserIDs[m.UserID] = struct{}{}
 		members = append(members, domain.Member{
 			ID:    userID,
 			Email: user.Email,

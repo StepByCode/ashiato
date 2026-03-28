@@ -140,8 +140,10 @@ func patchMeetingHandler(client *db.Client) echo.HandlerFunc {
 
 func shareMeetingHandler(client *db.Client, webhook *discord.WebhookClient) echo.HandlerFunc {
 	type request struct {
-		Year  int `json:"year"`
-		Month int `json:"month"`
+		Year      int     `json:"year"`
+		Month     int     `json:"month"`
+		MeetingAt *string `json:"meetingAt"`
+		MeetURL   *string `json:"meetUrl"`
 	}
 
 	return func(c echo.Context) error {
@@ -157,9 +159,18 @@ func shareMeetingHandler(client *db.Client, webhook *discord.WebhookClient) echo
 			return validationError(c, "body", "invalid JSON")
 		}
 
-		docID := meetingDocID(req.Year, req.Month)
 		var meeting MeetingResponse
+		docID := meetingDocID(req.Year, req.Month)
 		if err := client.NewRef(meetingCollection).Child(docID).Get(c.Request().Context(), &meeting); err != nil || meeting.UpdatedAt == "" {
+			meeting = MeetingResponse{}
+		}
+		if req.MeetingAt != nil {
+			meeting.MeetingAt = req.MeetingAt
+		}
+		if req.MeetURL != nil {
+			meeting.MeetURL = *req.MeetURL
+		}
+		if meeting.MeetingAt == nil && strings.TrimSpace(meeting.MeetURL) == "" {
 			return notFoundError(c, "meeting not found")
 		}
 
@@ -175,11 +186,19 @@ func shareMeetingHandler(client *db.Client, webhook *discord.WebhookClient) echo
 			meetURL = strings.TrimSpace(meeting.MeetURL)
 		}
 
+		sharerName := actor.Name
+		var profile ProfileResponse
+		if err := client.NewRef(profilesCollection).Child(actor.Subject).Get(c.Request().Context(), &profile); err == nil {
+			if strings.TrimSpace(profile.Name) != "" {
+				sharerName = strings.TrimSpace(profile.Name)
+			}
+		}
+
 		fields := []discord.WebhookEmbedField{
 			{Name: "対象月", Value: fmt.Sprintf("%d年%d月", req.Year, req.Month), Inline: true},
 			{Name: "定例日時", Value: meetingText, Inline: true},
 			{Name: "Meet URL", Value: meetURL, Inline: false},
-			{Name: "共有者", Value: actor.Name, Inline: false},
+			{Name: "共有者", Value: sharerName, Inline: false},
 		}
 		if _, err := webhook.SendEmbed(c.Request().Context(), "定例の予定を共有", "Backstage から定例予定を共有しました。", fields); err != nil {
 			return internalErrorWithLog(c, "meeting share failed", err, "year", req.Year, "month", req.Month)

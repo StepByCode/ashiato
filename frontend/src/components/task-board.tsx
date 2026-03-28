@@ -103,7 +103,6 @@ export function TaskBoard() {
   const [members, setMembers] = useState<Member[]>([]);
   const [currentMemberId, setCurrentMemberId] = useState("");
   const [loadingTasks, setLoadingTasks] = useState(true);
-  const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newAssigneeId, setNewAssigneeId] = useState("");
@@ -116,7 +115,7 @@ export function TaskBoard() {
 
   const fetchTasks = useCallback(async (year: number, month: number, options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
-    if (!silent && !hasLoadedTasks) {
+    if (!silent) {
       setLoadingTasks(true);
     }
     try {
@@ -132,16 +131,15 @@ export function TaskBoard() {
           url: t.url ?? "",
         })));
         setTasks((prev) => (tasksEqual(prev, fetched) ? prev : fetched));
-        setHasLoadedTasks(true);
       }
     } catch {
       // API unreachable - show empty state
     } finally {
-      if (!silent && !hasLoadedTasks) {
+      if (!silent) {
         setLoadingTasks(false);
       }
     }
-  }, [hasLoadedTasks]);
+  }, []);
 
   const fetchMembers = useCallback(async () => {
     try {
@@ -176,8 +174,6 @@ export function TaskBoard() {
   }, [getIdToken]);
 
   useEffect(() => {
-    setHasLoadedTasks(false);
-    setLoadingTasks(true);
     void fetchTasks(selectedPeriod.year, selectedPeriod.month);
   }, [fetchTasks, selectedPeriod.year, selectedPeriod.month]);
 

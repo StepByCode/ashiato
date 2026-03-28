@@ -251,17 +251,23 @@ export function MeetingBoard() {
       }
       const res = await apiFetch("/api/v1/meeting/share", token, {
         method: "POST",
-        body: JSON.stringify({ year: selectedPeriod.year, month: selectedPeriod.month }),
+        body: JSON.stringify({
+          year: selectedPeriod.year,
+          month: selectedPeriod.month,
+          meetingAt: parseMeetingDateTime(meetingAt)?.toISOString() ?? null,
+          meetUrl,
+        }),
       });
       if (!res.ok) {
-        setShareMessage("定例予定の共有に失敗しました");
+        const data = await res.json().catch(() => null);
+        setShareMessage(data?.error?.message ?? "定例予定の共有に失敗しました");
         return;
       }
       setShareMessage("Discord に共有しました");
     } finally {
       setSharingMeeting(false);
     }
-  }, [getIdToken, selectedPeriod.month, selectedPeriod.year]);
+  }, [getIdToken, meetUrl, meetingAt, selectedPeriod.month, selectedPeriod.year]);
 
   if (loadingMeeting) {
     return (

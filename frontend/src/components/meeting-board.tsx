@@ -295,7 +295,7 @@ export function MeetingBoard() {
     <WorkflowShell activeStep="定例">
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.85fr)]">
         {showSaveNotice ? (
-          <div className="fixed bottom-5 right-5 z-50 rounded-full border border-emerald-300/60 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 shadow-lg">
+          <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 rounded-full border border-emerald-300/60 bg-emerald-50 px-6 py-3 text-base font-semibold text-emerald-900 shadow-lg">
             保存しました
           </div>
         ) : null}

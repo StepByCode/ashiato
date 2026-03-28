@@ -156,7 +156,7 @@ func getTasksHandler(client *db.Client) echo.HandlerFunc {
 
 		tasks := make([]TaskResponse, 0, len(all))
 		for _, t := range all {
-			if t.AssigneeID != "" && t.AssigneeName == "" {
+			if t.AssigneeID != "" {
 				t.AssigneeName = lookupMemberName(ctx, client, t.AssigneeID)
 			}
 			tasks = append(tasks, t)

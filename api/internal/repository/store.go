@@ -80,6 +80,20 @@ type UserDoc struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
+type ProfileDoc struct {
+	Name string `json:"name"`
+}
+
+func (s *Store) lookupDisplayName(ctx context.Context, user UserDoc) string {
+	if user.FirebaseUID != "" {
+		var profile ProfileDoc
+		if err := s.client.NewRef("simple_profiles").Child(user.FirebaseUID).Get(ctx, &profile); err == nil && strings.TrimSpace(profile.Name) != "" {
+			return strings.TrimSpace(profile.Name)
+		}
+	}
+	return strings.TrimSpace(user.Name)
+}
+
 func (s *Store) UpsertUser(ctx context.Context, subject, email, name string) (uuid.UUID, UserDoc, error) {
 	ref := s.client.NewRef("users")
 	var all map[string]UserDoc
@@ -176,7 +190,7 @@ func (s *Store) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([
 		members = append(members, domain.Member{
 			ID:    userID,
 			Email: user.Email,
-			Name:  user.Name,
+			Name:  s.lookupDisplayName(ctx, user),
 			Role:  m.Role,
 		})
 	}

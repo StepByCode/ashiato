@@ -14,8 +14,6 @@ import { usePeriod } from "@/lib/period-context";
 import { WorkflowShell } from "./workflow-shell";
 
 type TaskState = "in_progress" | "done" | "approved";
-type PublicityState = "in_progress" | "done";
-
 type Task = {
   id: string;
   title: string;
@@ -177,23 +175,6 @@ export function TaskBoard() {
     }
   }, [getIdToken]);
 
-  const fetchPublicityStatus = useCallback(async (year: number, month: number) => {
-    setPublicityDone(false);
-    try {
-      const res = await apiFetch(`/api/v1/publicity/channels?year=${year}&month=${month}`, null);
-      if (res.ok) {
-        const data = await res.json();
-        const channels: { state?: PublicityState }[] = data.channels ?? [];
-        const allDone = channels.length > 0 && channels.every((channel) => channel.state === "done");
-        setPublicityDone(allDone);
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    setPublicityDone(false);
-  }, []);
-
   useEffect(() => {
     setHasLoadedTasks(false);
     setLoadingTasks(true);
@@ -349,7 +330,7 @@ export function TaskBoard() {
 
   if (loadingTasks) {
     return (
-      <WorkflowShell activeStep="作成" isWorkflowComplete={isWorkflowComplete}>
+      <WorkflowShell activeStep="作成">
         <div className="flex items-center justify-center py-20 text-muted-foreground">
           <Loader2 className="mr-2 size-5 animate-spin" />
           読み込み中...
@@ -359,7 +340,7 @@ export function TaskBoard() {
   }
 
   return (
-    <WorkflowShell activeStep="作成" isWorkflowComplete={isWorkflowComplete}>
+    <WorkflowShell activeStep="作成">
       <section className="grid gap-4">
         {tasks.map((task) => {
           const isEventNameTask = task.title === "イベント名";
